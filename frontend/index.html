@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Collaborative Whiteboard</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <section id="joinOverlay" class="join-overlay" role="dialog" aria-modal="true" aria-labelledby="joinTitle" hidden>
+    <form id="joinForm" class="join-card" autocomplete="off">
+      <div class="join-glow" aria-hidden="true"></div>
+      <div class="join-badge">🎨 WS Board</div>
+      <h1 id="joinTitle">Добро пожаловать на доску</h1>
+      <p class="join-subtitle">Выберите никнейм и цвет курсора — остальные пользователи будут видеть вас именно так.</p>
+
+      <label class="join-field" for="joinNicknameInput">
+        <span>Никнейм</span>
+        <input id="joinNicknameInput" type="text" maxlength="24" placeholder="Например, PixelFox" />
+      </label>
+
+      <div class="join-color-section">
+        <div class="join-color-heading">
+          <span>Цвет курсора</span>
+          <span id="joinCursorColorPreview" class="join-cursor-preview" aria-hidden="true"></span>
+        </div>
+        <div id="joinColorPalette" class="join-color-palette" aria-label="Быстрый выбор цвета курсора"></div>
+        <label class="join-color-picker" for="joinCursorColorInput">
+          <span>Свой цвет</span>
+          <input id="joinCursorColorInput" type="color" value="#7c3aed" />
+        </label>
+      </div>
+
+      <button class="join-submit" type="submit">Войти на доску</button>
+    </form>
+  </section>
+
+  <div class="app">
+    <header class="toolbar">
+      <div class="title">🎨 WS Board</div>
+
+      <div class="tool-group" aria-label="Инструменты рисования">
+        <button id="penButton" class="active" type="button">✏️ Кисть</button>
+        <button id="eraserButton" type="button">🧽 Ластик</button>
+      </div>
+
+      <div class="tool-group" aria-label="Настройки кисти">
+        <input id="colorInput" type="color" value="#111111" title="Цвет кисти" />
+        <label class="size-control" title="Размер кисти">
+          <span>↕️</span>
+          <input id="sizeInput" type="range" min="1" max="40" value="5" />
+        </label>
+        <div class="brush-preview" title="Превью кисти">
+          <div id="brushDot" class="brush-dot"></div>
+        </div>
+      </div>
+
+      <div class="tool-group" aria-label="Действия">
+        <button id="clearButton" type="button">🗑️ Очистить</button>
+        <button id="saveButton" type="button">💾 Сохранить PNG</button>
+      </div>
+
+      <div class="status" aria-live="polite">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">disconnected</span>
+      </div>
+    </header>
+
+    <aside class="online-users-panel" id="onlineUsersPanel" aria-label="Пользователи онлайн">
+      <div class="online-users-header">
+        <span>👥 Онлайн (<span id="usersCount">0</span>)</span>
+      </div>
+      <ul class="online-users-list" id="onlineUsersList"></ul>
+    </aside>
+
+    <main class="board-wrapper">
+      <canvas id="board"></canvas>
+    </main>
+
+    <section class="chat-panel" id="chatPanel" aria-label="Чат">
+      <div class="chat-header" id="chatHeader">
+        <div class="chat-title">
+          <span>💬 Чат</span>
+          <span id="chatNickname" class="chat-small"></span>
+        </div>
+        <button class="chat-toggle" id="chatToggle" title="Свернуть" type="button">−</button>
+      </div>
+      <div id="chatMessages" class="chat-messages"></div>
+      <div class="chat-input-row">
+        <input id="chatInput" type="text" maxlength="1000" placeholder="Напишите сообщение..." />
+        <button id="chatSendButton" type="button">➤</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="./src/app.js" type="module"></script>
+</body>
+</html>
