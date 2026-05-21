@@ -34,7 +34,7 @@ type PresenceResponse struct {
 
 // -- // -- // -- // -- // -- // -- // -- // -- // -- // -- // -- // --//
 // Дальше представлены функции, помогающие сократить повторяющиеся контсрукции в коде
-func GenerateSenderFromClient(client *Client) *Sender {
+func GenerateSenderFromClient(client *client) *Sender {
 	return &Sender{
 		ClientID: client.ID,
 		Nickname: client.Nickname,

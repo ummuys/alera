@@ -22,5 +22,9 @@ func main() {
 	}
 
 	pc := paint.NewPaintConn(logs)
-	web.RunServer(ctx, pc, logs)
+	go web.RunServer(ctx, pc, logs)
+
+	<-ctx.Done()
+	pc.Close()
+
 }

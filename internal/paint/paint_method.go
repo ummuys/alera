@@ -1,93 +1,143 @@
 package paint
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 )
 
 // paintConn реализует in-memory hub для совместной доски.
 type paintConn struct {
-	mu      sync.Mutex
-	clients map[*Client]struct{}
-	history []DrawPayload
-	logger  zerolog.Logger
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+
+	clientMu sync.Mutex
+	clients  map[string]*client
+
+	historyMu sync.Mutex
+	history   []DrawPayload
+
+	logger zerolog.Logger
+
+	RouterChan chan writeMessage
 }
 
 func NewPaintConn(logger zerolog.Logger) PaintConn {
-	return &paintConn{
-		logger:  logger,
-		clients: make(map[*Client]struct{}),
+
+	ctx, cancel := context.WithCancel(context.Background())
+	pc := &paintConn{
+		ctx:        ctx,
+		cancelFunc: cancel,
+
+		logger: logger,
+
+		clients:    make(map[string]*client),
+		RouterChan: make(chan writeMessage, 1024),
 	}
+	go pc.broadcast()
+	return pc
+
 }
 
-func (c *paintConn) Add(client *Client) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// Добавление клиента
+func (c *paintConn) Add(conn *websocket.Conn) {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
 
-	c.clients[client] = struct{}{}
+	id := uuid.New().String()
+	client := newClient(id, conn, c.RouterChan, c.logger)
+	c.clients[id] = client
 	c.logger.Info().Str("client_id", client.ID).Str("Nickname", client.Nickname).Msg("user connected")
-	go client.readSendMessage(c)
+	c.sendOnlineUsersLocked()
+
+	// Проблема: эта goroutine ждёт только client.Done; при глобальном shutdown без закрытия клиента может висеть.
+	go func() {
+		<-client.Done
+		c.remove(id)
+	}()
+}
+
+func (c *paintConn) Close() {
+	c.cancelFunc()
+	return
+}
+
+func (c *paintConn) remove(id string) {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
+	client, ok := c.clients[id]
+	if !ok {
+		return
+	}
+
+	delete(c.clients, client.ID)
+	c.logger.Info().Str("client_id", client.ID).Str("Nickname", client.Nickname).Msg("user disconnected")
 	c.sendOnlineUsersLocked()
 }
 
-func (c *paintConn) Remove(client *Client) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *paintConn) broadcast() {
 
-	removed := c.removeLocked(client)
-	if removed {
-		c.logger.Info().Str("client_id", client.ID).Str("Nickname", client.Nickname).Msg("user disconnected")
-
-		// Закрываем канал для подачи сообщений, чтобы завершить горутину
-		close(client.Send)
-		c.sendOnlineUsersLocked()
-	}
-}
-
-func (c *paintConn) Broadcast(sender *Client, msgType int, msg []byte) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for receiver := range c.clients {
+	for {
 		select {
-		case receiver.Send <- msg:
-			// Сообщение успешно поставлено в очередь клиента
-		default:
-			// Очередь клиента заполнена — пропускаем сообщение
+		case <-c.ctx.Done():
+			// Реализовать закрытие всего
+			return
+
+		case msg, ok := <-c.RouterChan:
+			if !ok {
+				c.logger.Info().Msg("RouterChan is closed")
+				return
+			}
+
+			switch msg.Event {
+			case EventTypeDraw:
+				c.addMoveToHistory(*msg.DP)
+			case EventTypeClear:
+				c.clearHistory()
+			}
+
+			c.clientMu.Lock()
+			clients := make([]*client, 0, len(c.clients))
+			for _, client := range c.clients {
+				clients = append(clients, client)
+			}
+			// Нет фильтрации по RoomID в broadcast (shared state impact между клиентами)
+			c.clientMu.Unlock()
+
+			for _, receiver := range clients {
+				select {
+				case receiver.WriteChan <- msg.Data:
+					// Отправляем пользователям
+				default:
+					// Очередь клиента заполнена — пропускаем сообщение
+				}
+			}
+
 		}
 	}
-
 }
 
-func (c *paintConn) AddMoveToHistory(dp DrawPayload) {
+func (c *paintConn) addMoveToHistory(dp DrawPayload) {
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
 	c.history = append(c.history, dp)
 }
 
-func (c *paintConn) ClearHistory() {
+func (c *paintConn) clearHistory() {
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
 	c.history = make([]DrawPayload, 0)
-}
-
-// Снести мертвых пользователей
-func (c *paintConn) removeLocked(client *Client) bool {
-	if client.Conn != nil {
-		_ = client.Conn.Close()
-	}
-
-	if _, ok := c.clients[client]; !ok {
-		return false
-	}
-
-	delete(c.clients, client)
-	return true
 }
 
 // Получение всех онлайн пользователей
 func (c *paintConn) onlineUsersLocked() []Sender {
 	users := make([]Sender, 0, len(c.clients))
-	for client := range c.clients {
+	for _, client := range c.clients {
 		users = append(users, Sender{
 			ClientID: client.ID,
 			Nickname: client.Nickname,
@@ -98,42 +148,35 @@ func (c *paintConn) onlineUsersLocked() []Sender {
 	return users
 }
 
-// Функция для получения всех пользователей
-// Она запускается каждый раз, когда кто-то заходит или выходит. Если вдуг невозможно отправить кому-либо из
-// списка пользователей сообщение, то все функции снова выполняются в for пока не будет безошибочного результата.
+// // Функция для получения всех пользователей
+// // Она запускается каждый раз, когда кто-то заходит или выходит. Если вдуг невозможно отправить кому-либо из
+// // списка пользователей сообщение, то все функции снова выполняются в for пока не будет безошибочного результата.
 func (c *paintConn) sendOnlineUsersLocked() {
 
-	for {
-		data, err := json.Marshal(
-			ServerResponse{
-				Type: EventTypePresence,
-				Payload: PresenceResponse{
-					Users: c.onlineUsersLocked(),
-				},
+	data, err := json.Marshal(
+		ServerResponse{
+			Type: EventTypePresence,
+			Payload: PresenceResponse{
+				Users: c.onlineUsersLocked(),
 			},
-		)
+		},
+	)
 
-		if err != nil {
-			c.logger.Error().Err(err).Msg("cannot marshal online users")
-			return
-		}
-
-		failed := make([]*Client, 0)
-		for client := range c.clients {
-			if err := client.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				c.logger.Warn().Err(err).Str("client_id", client.ID).Str("Nickname", client.Nickname).Msg("online users write failed")
-				failed = append(failed, client)
-			}
-		}
-
-		if len(failed) == 0 {
-			c.logger.Info().Int("count", len(c.clients)).Msg("online users sent")
-			return
-		}
-
-		for _, client := range failed {
-			c.removeLocked(client)
-		}
-
+	if err != nil {
+		c.logger.Error().Err(err).Msg("cannot marshal online users")
+		return
 	}
+
+	msg := writeMessage{
+		ClientID: "server",
+		Event:    EventTypePresence,
+		Data:     data,
+	}
+
+	select {
+	case c.RouterChan <- msg:
+	default:
+		c.logger.Warn().Str("client_id", "server").Str("event", msg.Event).Msg("router queue full, drop event")
+	}
+
 }

@@ -25,7 +25,7 @@ func RunServer(ctx context.Context, pc paint.PaintConn, logs zerolog.Logger) {
 	})
 
 	server := http.Server{
-		Addr:    ":8081",
+		Addr:    ":8089",
 		Handler: mux,
 	}
 
@@ -40,7 +40,7 @@ func RunServer(ctx context.Context, pc paint.PaintConn, logs zerolog.Logger) {
 
 	<-ctx.Done()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {

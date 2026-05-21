@@ -1,11 +1,8 @@
 package paint
 
-type PaintConn interface {
-	Add(client *Client)
-	Remove(client *Client)
-	Broadcast(sender *Client, msgType int, msg []byte)
+import "github.com/gorilla/websocket"
 
-	// SendHistory(client *Client)
-	AddMoveToHistory(dp DrawPayload)
-	ClearHistory()
+type PaintConn interface {
+	Add(conn *websocket.Conn)
+	Close()
 }
