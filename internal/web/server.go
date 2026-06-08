@@ -14,9 +14,13 @@ import (
 )
 
 // Функция для запуска сервера, пока передается один интерфейс с аналогом paint
-func RunServer(ctx context.Context, pc paint.PaintConn, logs zerolog.Logger) {
+func RunServer(ctx context.Context, pc paint.PaintHub, logs zerolog.Logger) {
+
 	mux := http.NewServeMux()
 	frontendPath := resolveFrontendPath()
+
+	sCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	// Выдаем статические файлы, пока не используем Nginx.
 	mux.Handle("/", http.FileServer(http.Dir(frontendPath)))
@@ -35,12 +39,13 @@ func RunServer(ctx context.Context, pc paint.PaintConn, logs zerolog.Logger) {
 	wg.Go(func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logs.Error().Err(err).Msg("server stopped with error")
+			cancel()
 		}
 	})
 
-	<-ctx.Done()
+	<-sCtx.Done()
 
-	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {

@@ -21,10 +21,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	pc := paint.NewPaintConn(logs)
-	go web.RunServer(ctx, pc, logs)
-
-	<-ctx.Done()
+	pc := paint.NewPaintHub(ctx, logs)
+	web.RunServer(ctx, pc, logs)
 	pc.Close()
 
 }

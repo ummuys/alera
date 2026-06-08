@@ -1,6 +1,7 @@
 package paint
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -11,63 +12,128 @@ import (
 )
 
 type client struct {
-	ID       string
-	Nickname string
-	Conn     *websocket.Conn
-	RoomID   string
-	Color    string
+	id       string
+	nickname string
+	conn     *websocket.Conn
+	roomID   string
+	color    string
 
 	// INFO
 	logger zerolog.Logger
 
 	// SYNC
-	RouterChan chan writeMessage
-	WriteChan  chan []byte
-	Done       chan struct{}
-	DoneOnce   sync.Once
+	routerChan chan writeMessage
+	writeChan  chan []byte
+
+	mu     sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	once   sync.Once
 }
 
-func newClient(id string, conn *websocket.Conn, rc chan writeMessage, logger zerolog.Logger) *client {
+func newClient(id string, conn *websocket.Conn, rc chan writeMessage, hubctx context.Context, logger zerolog.Logger) *client {
+
+	ctx, cancel := context.WithCancel(hubctx)
+
 	client := &client{
-		ID:         id,
-		Conn:       conn,
-		logger:     logger,
-		WriteChan:  make(chan []byte, 128),
-		RouterChan: rc,
-		Done:       make(chan struct{}),
+		id:     id,
+		conn:   conn,
+		logger: logger,
+
+		writeChan:  make(chan []byte, 128),
+		routerChan: rc,
+		ctx:        ctx,
+		cancel:     cancel,
 	}
-	go client.writePump()
-	go client.readPump()
+
 	return client
 }
 
-// Проблема: close() сам делает close(c.Done) без внутреннего sync.Once; сейчас вызовы обёрнуты DoneOnce.Do, но это хрупкий контракт.
-func (c *client) close() {
-	c.Conn.Close()
-	close(c.Done)
+func (c *client) start() {
+	go c.writePump()
+	go c.readPump()
 }
 
-// Отправка сообщения на websocket соединение
+func (c *client) end() {
+	c.once.Do(func() {
+		c.cancel()
+		c.conn.Close()
+	})
+}
+
+func (c *client) send(msg []byte) {
+	select {
+	case <-c.ctx.Done():
+	case c.writeChan <- msg:
+	default:
+	}
+}
+
+func (c *client) setInfo(ci ClientInfo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.nickname = ci.Nickname
+	c.roomID = ci.RoomID
+	c.color = ci.Color
+}
+
+func (c *client) getInfo() ClientInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return ClientInfo{
+		ID:       c.id,
+		RoomID:   c.roomID,
+		Nickname: c.nickname,
+		Color:    c.color,
+	}
+}
+
+func (c *client) sender() *Sender {
+	ci := c.getInfo()
+	return &Sender{
+		ClientID: ci.ID,
+		Nickname: ci.Nickname,
+		Color:    ci.Color,
+	}
+}
 
 // Проблема: writePump читает for msg := range c.WriteChan, но WriteChan нигде не закрывается при remove/shutdown.
 func (c *client) writePump() {
-	for msg := range c.WriteChan {
 
-		if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			c.logger.Error().Err(err).Str("client_id", c.ID).Str("Nickname", c.Nickname).Msg("can't read message from send chan")
-			c.DoneOnce.Do(func() { c.close() })
+	for {
+		select {
+		case <-c.ctx.Done():
 			return
+
+		case msg, ok := <-c.writeChan:
+			if !ok {
+				ci := c.getInfo()
+				c.logger.Error().Str("client_id", ci.ID).Str("Nickname", ci.Nickname).Msg("can't read message from send chan")
+				c.end()
+				return
+			}
+
+			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				ci := c.getInfo()
+				c.logger.Error().Err(err).Str("client_id", ci.ID).Str("Nickname", ci.Nickname).Msg("can't write message to websocket")
+				c.end()
+				return
+			}
+
 		}
 	}
+
 }
 
 // Получение сообщения с websocket соединения
 func (c *client) readPump() {
 
 	for {
-		_, msg, err := c.Conn.ReadMessage()
+		_, msg, err := c.conn.ReadMessage()
 		if err != nil {
-			c.DoneOnce.Do(func() { c.close() })
+			c.end()
 			return
 		}
 
@@ -103,32 +169,39 @@ func (c *client) readPump() {
 
 func (c *client) eventTypeJoin(event ClientEvent) {
 	var joinPay JoinPayload
-	if err := json.Unmarshal(event.Payload, &joinPay); err != nil {
+	if err := json.Unmarshal(event.Payload, &joinPay); err != nil { // Обязательно добавить обработчик ошибок
 		return
 	}
 
 	// Проблема: eventTypeJoin пишет поля клиента без clientMu, а onlineUsersLocked() читает их из других goroutine (под clientMu, но writer его не берёт).
-	c.Nickname = strings.TrimSpace(joinPay.Nickname)
-	c.RoomID = strings.TrimSpace(joinPay.RoomID)
-
-	if c.Nickname == "" {
-		c.Nickname = "Anonymous"
+	nickname := strings.TrimSpace(joinPay.Nickname)
+	if nickname == "" {
+		nickname = "Anonymous"
 	}
 
-	if c.RoomID == "" {
-		c.RoomID = "main"
+	roomID := strings.TrimSpace(joinPay.RoomID)
+	if roomID == "" {
+		roomID = "main"
 	}
 
-	c.Color = joinPay.Color
+	color := strings.TrimSpace(joinPay.Color)
+
+	c.setInfo(ClientInfo{
+		Nickname: nickname,
+		RoomID:   roomID,
+		Color:    color,
+	})
+
+	ci := c.getInfo()
 
 	// 1. Личный ответ новому клиенту: session
-	sessionResp, err := json.Marshal(ServerResponse{
+	sessionResp, err := json.Marshal(ServerResponse{ // Обязательно добавить обработчик ошибок
 		Type: EventTypeSession,
 		Payload: SessionResponse{
-			ClientID: c.ID,
-			Nickname: c.Nickname,
-			RoomID:   c.RoomID,
-			Color:    c.Color,
+			ClientID: ci.ID,
+			Nickname: ci.Nickname,
+			RoomID:   ci.RoomID,
+			Color:    ci.Color,
 		},
 	})
 	if err != nil {
@@ -137,24 +210,20 @@ func (c *client) eventTypeJoin(event ClientEvent) {
 
 	// Проблема: при заполненном RouterChan каждый event ждёт до 200ms (time.After), т.е. read loop клиента тормозит.
 	msg := writeMessage{
-		ClientID: c.ID,
+		ClientID: ci.ID,
 		Event:    EventTypeSession,
 		Data:     sessionResp,
 	}
 
-	select {
-	case c.RouterChan <- msg:
-	case <-time.After(time.Millisecond * 200):
-		c.logger.Warn().Str("client_id", c.ID).Str("event", msg.Event).Msg("router queue full, drop event")
-	}
+	c.sendMessageToRouterChan(msg)
 
 	// 2. Уведомление всем остальным: user_joined
-	data, err := json.Marshal(ServerResponse{
+	data, err := json.Marshal(ServerResponse{ // Обязательно добавить обработчик ошибок
 		Type:   EventTypeUserJoined,
-		RoomID: c.RoomID,
-		Sender: GenerateSenderFromClient(c),
+		RoomID: ci.RoomID,
+		Sender: c.sender(),
 		Payload: UserJoinedResponse{
-			Message: c.Nickname + " подключился",
+			Message: ci.Nickname + " подключился",
 		},
 	})
 	if err != nil {
@@ -162,16 +231,12 @@ func (c *client) eventTypeJoin(event ClientEvent) {
 	}
 
 	msg = writeMessage{
-		ClientID: c.ID,
+		ClientID: ci.ID,
 		Event:    EventTypeJoin,
 		Data:     data,
 	}
 
-	select {
-	case c.RouterChan <- msg:
-	case <-time.After(time.Millisecond * 200):
-		c.logger.Warn().Str("client_id", c.ID).Str("event", msg.Event).Msg("router queue full, drop event")
-	}
+	c.sendMessageToRouterChan(msg)
 
 }
 
@@ -181,29 +246,27 @@ func (c *client) eventTypeChat(event ClientEvent) {
 		return
 	}
 
-	data, _ := json.Marshal(
+	ci := c.getInfo()
+
+	data, _ := json.Marshal( // Обязательно добавить обработчик ошибок
 		ServerResponse{
 			Type: EventTypeChat,
 			Payload: ChatResponse{
 				Text: chatPay.Text,
 			},
-			Sender: GenerateSenderFromClient(c),
-			RoomID: c.RoomID,
+			Sender: c.sender(),
+			RoomID: ci.RoomID,
 		},
 	)
 
 	// Проблема: при заполненном RouterChan каждый event ждёт до 200ms (time.After), т.е. read loop клиента тормозит.
 	msg := writeMessage{
-		ClientID: c.ID,
+		ClientID: ci.ID,
 		Event:    EventTypeChat,
 		Data:     data,
 	}
 
-	select {
-	case c.RouterChan <- msg:
-	case <-time.After(time.Millisecond * 200):
-		c.logger.Warn().Str("client_id", c.ID).Str("event", msg.Event).Msg("router queue full, drop event")
-	}
+	c.sendMessageToRouterChan(msg)
 
 }
 
@@ -213,47 +276,56 @@ func (c *client) eventTypeDraw(event ClientEvent) {
 		return
 	}
 
-	data, _ := json.Marshal(
+	ci := c.getInfo()
+
+	data, _ := json.Marshal( // Обязательно добавить обработчик ошибок
 		ServerResponse{
 			Type:    EventTypeDraw,
-			Sender:  GenerateSenderFromClient(c),
+			Sender:  c.sender(),
 			Payload: drawPay,
 		},
 	)
 
 	msg := writeMessage{
-		ClientID: c.ID,
+		ClientID: ci.ID,
 		Event:    EventTypeDraw,
 		DP:       &drawPay,
 		Data:     data,
 	}
 
-	select {
-	case c.RouterChan <- msg:
-	case <-time.After(time.Millisecond * 200):
-		c.logger.Warn().Str("client_id", c.ID).Str("event", msg.Event).Msg("router queue full, drop event")
-	}
+	c.sendMessageToRouterChan(msg)
 
 }
 
 func (c *client) eventTypeClear(event ClientEvent) {
-	data, _ := json.Marshal(
+	data, _ := json.Marshal( // Обязательно добавить обработчик ошибок
 		ServerResponse{
 			Type:   EventTypeClear,
-			Sender: GenerateSenderFromClient(c),
+			Sender: c.sender(),
 		},
 	)
 
+	ci := c.getInfo()
+
 	msg := writeMessage{
-		ClientID: c.ID,
+		ClientID: ci.ID,
 		Event:    EventTypeClear,
 		Data:     data,
 	}
 
-	select {
-	case c.RouterChan <- msg:
-	case <-time.After(time.Millisecond * 200):
-		c.logger.Warn().Str("client_id", c.ID).Str("event", msg.Event).Msg("router queue full, drop event")
-	}
+	c.sendMessageToRouterChan(msg)
 
+}
+
+func (c *client) sendMessageToRouterChan(msg writeMessage) {
+
+	select {
+	case <-c.ctx.Done():
+		c.logger.Warn().Msg("hab ctx is done")
+	case c.routerChan <- msg:
+		// send message
+	case <-time.After(time.Millisecond * 200):
+		ci := c.getInfo()
+		c.logger.Warn().Str("client_id", ci.ID).Str("event", msg.Event).Msg("router queue full, drop event")
+	}
 }

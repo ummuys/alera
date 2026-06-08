@@ -31,13 +31,3 @@ type Sender struct {
 type PresenceResponse struct {
 	Users []Sender `json:"users"`
 }
-
-// -- // -- // -- // -- // -- // -- // -- // -- // -- // -- // -- // --//
-// Дальше представлены функции, помогающие сократить повторяющиеся контсрукции в коде
-func GenerateSenderFromClient(client *client) *Sender {
-	return &Sender{
-		ClientID: client.ID,
-		Nickname: client.Nickname,
-		Color:    client.Color,
-	}
-}

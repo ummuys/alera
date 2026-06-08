@@ -2,7 +2,7 @@ package paint
 
 import "github.com/gorilla/websocket"
 
-type PaintConn interface {
+type PaintHub interface {
 	Add(conn *websocket.Conn)
 	Close()
 }

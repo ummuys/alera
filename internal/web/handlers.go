@@ -16,7 +16,7 @@ var upgrade = websocket.Upgrader{
 
 // для request нужен указатель, так как это структура + тяжелая структура
 // rw - это интерфейс, он не передается по указателю
-func paintWSHandle(w http.ResponseWriter, r *http.Request, pc paint.PaintConn) {
+func paintWSHandle(w http.ResponseWriter, r *http.Request, ph paint.PaintHub) {
 
 	if http.MethodGet != r.Method {
 		http.Error(w, "bad method", http.StatusMethodNotAllowed)
@@ -29,5 +29,5 @@ func paintWSHandle(w http.ResponseWriter, r *http.Request, pc paint.PaintConn) {
 		return
 	}
 
-	pc.Add(conn)
+	ph.Add(conn)
 }
