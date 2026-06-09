@@ -138,6 +138,7 @@ func (c *client) readPump() {
 
 		var event ClientEvent
 		if err := json.Unmarshal(msg, &event); err != nil {
+			c.logger.Error().Err(err).Msg("marshal response failed")
 			continue
 		}
 
@@ -170,6 +171,7 @@ func (c *client) readPump() {
 func (c *client) eventTypeJoin(event ClientEvent) {
 	var joinPay JoinPayload
 	if err := json.Unmarshal(event.Payload, &joinPay); err != nil { // Обязательно добавить обработчик ошибок
+		c.logger.Error().Err(err).Msg("marshal response failed")
 		return
 	}
 
@@ -243,12 +245,13 @@ func (c *client) eventTypeJoin(event ClientEvent) {
 func (c *client) eventTypeChat(event ClientEvent) {
 	var chatPay ChatPayload
 	if err := json.Unmarshal(event.Payload, &chatPay); err != nil {
+		c.logger.Error().Err(err).Msg("marshal response failed")
 		return
 	}
 
 	ci := c.getInfo()
 
-	data, _ := json.Marshal( // Обязательно добавить обработчик ошибок
+	data, err := json.Marshal( // Обязательно добавить обработчик ошибок
 		ServerResponse{
 			Type: EventTypeChat,
 			Payload: ChatResponse{
@@ -258,6 +261,11 @@ func (c *client) eventTypeChat(event ClientEvent) {
 			RoomID: ci.RoomID,
 		},
 	)
+
+	if err != nil {
+		c.logger.Error().Err(err).Msg("marshal response failed")
+		return
+	}
 
 	// Проблема: при заполненном RouterChan каждый event ждёт до 200ms (time.After), т.е. read loop клиента тормозит.
 	msg := writeMessage{
@@ -274,18 +282,24 @@ func (c *client) eventTypeChat(event ClientEvent) {
 func (c *client) eventTypeDraw(event ClientEvent) {
 	var drawPay DrawPayload
 	if err := json.Unmarshal(event.Payload, &drawPay); err != nil {
+		c.logger.Error().Err(err).Msg("marshal response failed")
 		return
 	}
 
 	ci := c.getInfo()
 
-	data, _ := json.Marshal( // Обязательно добавить обработчик ошибок
+	data, err := json.Marshal( // Обязательно добавить обработчик ошибок
 		ServerResponse{
 			Type:    EventTypeDraw,
 			Sender:  c.sender(),
 			Payload: drawPay,
 		},
 	)
+
+	if err != nil {
+		c.logger.Error().Err(err).Msg("marshal response failed")
+		return
+	}
 
 	msg := writeMessage{
 		ClientID: ci.ID,
@@ -300,12 +314,17 @@ func (c *client) eventTypeDraw(event ClientEvent) {
 
 // Функция ивента при попытке очистить весь холст
 func (c *client) eventTypeClear(event ClientEvent) {
-	data, _ := json.Marshal( // Обязательно добавить обработчик ошибок
+	data, err := json.Marshal( // Обязательно добавить обработчик ошибок
 		ServerResponse{
 			Type:   EventTypeClear,
 			Sender: c.sender(),
 		},
 	)
+
+	if err != nil {
+		c.logger.Error().Err(err).Msg("marshal response failed")
+		return
+	}
 
 	ci := c.getInfo()
 
@@ -339,5 +358,10 @@ func (c *client) sendMessageToWriteChan(msg []byte) {
 	select {
 	case <-c.ctx.Done():
 	case c.writeChan <- msg:
+	default:
+		ci := c.getInfo()
+		c.logger.Warn().
+			Str("client_id", ci.ID).
+			Msg("client write queue full, drop message")
 	}
 }

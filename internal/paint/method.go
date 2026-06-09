@@ -55,7 +55,6 @@ func (ph *paintHub) Add(conn *websocket.Conn) {
 	ci := client.getInfo()
 
 	ph.logger.Info().Str("client_id", ci.ID).Str("Nickname", ci.Nickname).Msg("user connected")
-	ph.sendOnlineUsersLocked()
 
 	ph.clientMu.Unlock()
 
@@ -100,7 +99,7 @@ func (ph *paintHub) remove(id string) {
 
 	delete(ph.clients, client.id)
 	ph.logger.Info().Str("client_id", ci.ID).Str("Nickname", ci.Nickname).Msg("user disconnected")
-	ph.sendOnlineUsersLocked()
+	ph.sendOnlineUsers()
 }
 
 func (ph *paintHub) broadcast() {
@@ -123,9 +122,12 @@ func (ph *paintHub) broadcast() {
 			case EventTypeSession:
 
 				ph.clientMu.Lock()
-				c := ph.clients[msg.ClientID]
+				c, ok := ph.clients[msg.ClientID]
+				if !ok {
+					continue
+				}
 				ph.clientMu.Unlock()
-
+				ph.sendOnlineUsers()
 				c.sendMessageToWriteChan(msg.Data)
 				continue
 
@@ -177,7 +179,7 @@ func (ph *paintHub) onlineUsersLocked() []Sender {
 // // Функция для получения всех пользователей
 // // Она запускается каждый раз, когда кто-то заходит или выходит. Если вдуг невозможно отправить кому-либо из
 // // списка пользователей сообщение, то все функции снова выполняются в for пока не будет безошибочного результата.
-func (ph *paintHub) sendOnlineUsersLocked() {
+func (ph *paintHub) sendOnlineUsers() {
 
 	data, err := json.Marshal(
 		ServerResponse{
