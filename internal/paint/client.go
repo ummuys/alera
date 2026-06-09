@@ -11,19 +11,21 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// (В БУДУЩЕМ ПЕРЕДЕЛАТЬ В ИНТЕРФЕЙС ЕСЛИ ЭТО БУДЕТ ЛОГИЧНО)
+// Структура, отвечающая за работу с клиентом
 type client struct {
-	id       string
-	nickname string
-	conn     *websocket.Conn
-	roomID   string
-	color    string
+	id       string          // Уникальный ID клиента, генерируется при создании в PaintHub в методе Add()
+	nickname string          // Имя пользователя
+	conn     *websocket.Conn // Websocket соединение
+	roomID   string          // (ДОБАВИТЬ В БУДУЩЕМ) ID комнаты, где находится пользователь
+	color    string          // Цвет курсора пользователя на доске
 
 	// INFO
 	logger zerolog.Logger
 
 	// SYNC
-	routerChan chan writeMessage
-	writeChan  chan []byte
+	routerChan chan writeMessage // Канал для отправки сообщений в метод broadcast() (рассылка)
+	writeChan  chan []byte       // Канал для считывания сообщений и отправки на conn
 
 	mu     sync.Mutex
 	ctx    context.Context
@@ -31,8 +33,8 @@ type client struct {
 	once   sync.Once
 }
 
+// Конструктор для создания объекта "клиент"
 func newClient(id string, conn *websocket.Conn, rc chan writeMessage, hubctx context.Context, logger zerolog.Logger) *client {
-
 	ctx, cancel := context.WithCancel(hubctx)
 
 	client := &client{
@@ -49,11 +51,13 @@ func newClient(id string, conn *websocket.Conn, rc chan writeMessage, hubctx con
 	return client
 }
 
+// Запуск двух поток на чтение новых сообщений из writeChan (readPump) и отправки новых сообщений (writePump) в routerChan
 func (c *client) start() {
 	go c.writePump()
 	go c.readPump()
 }
 
+// Функция, если пользователь вышел или hub закрылся
 func (c *client) end() {
 	c.once.Do(func() {
 		c.cancel()
@@ -61,14 +65,7 @@ func (c *client) end() {
 	})
 }
 
-func (c *client) send(msg []byte) {
-	select {
-	case <-c.ctx.Done():
-	case c.writeChan <- msg:
-	default:
-	}
-}
-
+// Установка данных для клиента
 func (c *client) setInfo(ci ClientInfo) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -78,6 +75,7 @@ func (c *client) setInfo(ci ClientInfo) {
 	c.color = ci.Color
 }
 
+// Получить информацию о пользователя для составления ответов с сервера
 func (c *client) getInfo() ClientInfo {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -90,6 +88,7 @@ func (c *client) getInfo() ClientInfo {
 	}
 }
 
+// Функция преобразования данных в структуру в Sender для отправки ответа с сервера
 func (c *client) sender() *Sender {
 	ci := c.getInfo()
 	return &Sender{
@@ -99,7 +98,7 @@ func (c *client) sender() *Sender {
 	}
 }
 
-// Проблема: writePump читает for msg := range c.WriteChan, но WriteChan нигде не закрывается при remove/shutdown.
+// Функция для отправки сообщения клиенту на conn (websocket)
 func (c *client) writePump() {
 
 	for {
@@ -127,7 +126,7 @@ func (c *client) writePump() {
 
 }
 
-// Получение сообщения с websocket соединения
+// Функция для получения сообщений клиента с conn (websocket)
 func (c *client) readPump() {
 
 	for {
@@ -161,12 +160,13 @@ func (c *client) readPump() {
 			c.eventTypeClear(event)
 
 		default:
-			// Если ничего не подошло
+
 		}
 	}
 
 }
 
+// Функция ивента при появлении нового клиента в чат / комнату.
 func (c *client) eventTypeJoin(event ClientEvent) {
 	var joinPay JoinPayload
 	if err := json.Unmarshal(event.Payload, &joinPay); err != nil { // Обязательно добавить обработчик ошибок
@@ -208,14 +208,13 @@ func (c *client) eventTypeJoin(event ClientEvent) {
 		return
 	}
 
-	// Проблема: при заполненном RouterChan каждый event ждёт до 200ms (time.After), т.е. read loop клиента тормозит.
-	msg := writeMessage{
+	msg1 := writeMessage{
 		ClientID: ci.ID,
 		Event:    EventTypeSession,
 		Data:     sessionResp,
 	}
 
-	c.sendMessageToRouterChan(msg)
+	c.sendMessageToRouterChan(msg1)
 
 	// 2. Уведомление всем остальным: user_joined
 	data, err := json.Marshal(ServerResponse{ // Обязательно добавить обработчик ошибок
@@ -230,16 +229,17 @@ func (c *client) eventTypeJoin(event ClientEvent) {
 		return
 	}
 
-	msg = writeMessage{
+	msg2 := writeMessage{
 		ClientID: ci.ID,
 		Event:    EventTypeJoin,
 		Data:     data,
 	}
 
-	c.sendMessageToRouterChan(msg)
+	c.sendMessageToRouterChan(msg2)
 
 }
 
+// Функция ивента при отправки сообщения в чат
 func (c *client) eventTypeChat(event ClientEvent) {
 	var chatPay ChatPayload
 	if err := json.Unmarshal(event.Payload, &chatPay); err != nil {
@@ -270,6 +270,7 @@ func (c *client) eventTypeChat(event ClientEvent) {
 
 }
 
+// Функция ивента при добавления элементов на холст (рисование)
 func (c *client) eventTypeDraw(event ClientEvent) {
 	var drawPay DrawPayload
 	if err := json.Unmarshal(event.Payload, &drawPay); err != nil {
@@ -297,6 +298,7 @@ func (c *client) eventTypeDraw(event ClientEvent) {
 
 }
 
+// Функция ивента при попытке очистить весь холст
 func (c *client) eventTypeClear(event ClientEvent) {
 	data, _ := json.Marshal( // Обязательно добавить обработчик ошибок
 		ServerResponse{
@@ -317,6 +319,7 @@ func (c *client) eventTypeClear(event ClientEvent) {
 
 }
 
+// Функция для отправки информации для рассылки с задержкой в 200мс
 func (c *client) sendMessageToRouterChan(msg writeMessage) {
 
 	select {
@@ -327,5 +330,14 @@ func (c *client) sendMessageToRouterChan(msg writeMessage) {
 	case <-time.After(time.Millisecond * 200):
 		ci := c.getInfo()
 		c.logger.Warn().Str("client_id", ci.ID).Str("event", msg.Event).Msg("router queue full, drop event")
+	}
+}
+
+// Попытка отправить сообщение для чтения без задержки
+// Если не получается, то сообщение просто не отправляется
+func (c *client) sendMessageToWriteChan(msg []byte) {
+	select {
+	case <-c.ctx.Done():
+	case c.writeChan <- msg:
 	}
 }

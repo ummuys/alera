@@ -29,7 +29,7 @@ func RunServer(ctx context.Context, pc paint.PaintHub, logs zerolog.Logger) {
 	})
 
 	server := http.Server{
-		Addr:    ":8089",
+		Addr:    "0.0.0.0:8089",
 		Handler: mux,
 	}
 

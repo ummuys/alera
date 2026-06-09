@@ -31,3 +31,8 @@ type Sender struct {
 type PresenceResponse struct {
 	Users []Sender `json:"users"`
 }
+
+type OnlineUsers struct {
+	Type  string   `json:"type"`
+	Users []string `json:"users"`
+}

@@ -118,6 +118,17 @@ func (ph *paintHub) broadcast() {
 			}
 
 			switch msg.Event {
+			// Инвент, когда клиент подключается. Нужно отосласть websocket
+			// ответ о том, что соединение установлено
+			case EventTypeSession:
+
+				ph.clientMu.Lock()
+				c := ph.clients[msg.ClientID]
+				ph.clientMu.Unlock()
+
+				c.sendMessageToWriteChan(msg.Data)
+				continue
+
 			case EventTypeDraw:
 				ph.addMoveToHistory(*msg.DP)
 			case EventTypeClear:
@@ -129,11 +140,12 @@ func (ph *paintHub) broadcast() {
 			for _, client := range ph.clients {
 				clients = append(clients, client)
 			}
+
 			// Нет фильтрации по RoomID в broadcast (shared state impact между клиентами)
 			ph.clientMu.Unlock()
 
 			for _, receiver := range clients {
-				receiver.send(msg.Data)
+				receiver.sendMessageToWriteChan(msg.Data)
 			}
 
 		}
