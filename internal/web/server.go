@@ -14,7 +14,7 @@ import (
 )
 
 // Функция для запуска сервера, пока передается один интерфейс с аналогом paint
-func RunServer(ctx context.Context, pc paint.PaintHub, logs zerolog.Logger) {
+func RunServer(ctx context.Context, ph paint.PaintHub, logs zerolog.Logger) {
 
 	mux := http.NewServeMux()
 	frontendPath := resolveFrontendPath()
@@ -24,8 +24,13 @@ func RunServer(ctx context.Context, pc paint.PaintHub, logs zerolog.Logger) {
 
 	// Выдаем статические файлы, пока не используем Nginx.
 	mux.Handle("/", http.FileServer(http.Dir(frontendPath)))
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		paintWSHandle(w, r, pc)
+
+	mux.HandleFunc("/api/v1/room", func(w http.ResponseWriter, r *http.Request) {
+		CreateRoom(w, r, ph, logs)
+	})
+
+	mux.HandleFunc("/api/v1/room", func(w http.ResponseWriter, r *http.Request) {
+		return
 	})
 
 	server := http.Server{

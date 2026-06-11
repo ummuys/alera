@@ -23,6 +23,4 @@ func main() {
 
 	pc := paint.NewPaintHub(ctx, logs)
 	web.RunServer(ctx, pc, logs)
-	pc.Close()
-
 }
