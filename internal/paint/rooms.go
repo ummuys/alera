@@ -137,10 +137,11 @@ func (pr *paintRoom) broadcast() {
 
 				pr.clientMu.Lock()
 				c, ok := pr.clients[msg.ClientID]
+				pr.clientMu.Unlock()
 				if !ok {
 					continue
 				}
-				pr.clientMu.Unlock()
+
 				pr.sendOnlineUsers()
 				c.sendMessageToWriteChan(msg.Data)
 				continue

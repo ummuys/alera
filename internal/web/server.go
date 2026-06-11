@@ -25,18 +25,22 @@ func RunServer(ctx context.Context, ph paint.PaintHub, logs zerolog.Logger) {
 	// Выдаем статические файлы, пока не используем Nginx.
 	mux.Handle("/", http.FileServer(http.Dir(frontendPath)))
 
-	mux.HandleFunc("/api/v1/room", func(w http.ResponseWriter, r *http.Request) {
+	// --------------- HANDLERS ---------------
+	logs.Info().Str("register route", CreateRoomEndpoint).Msg("")
+	mux.HandleFunc(CreateRoomEndpoint, func(w http.ResponseWriter, r *http.Request) {
 		CreateRoom(w, r, ph, logs)
 	})
 
-	mux.HandleFunc("/api/v1/room", func(w http.ResponseWriter, r *http.Request) {
-		return
+	logs.Info().Str("register route", ListRoomsEndpoint).Msg("")
+	mux.HandleFunc(ListRoomsEndpoint, func(w http.ResponseWriter, r *http.Request) {
+		ListRooms(w, r, ph, logs)
 	})
 
 	server := http.Server{
 		Addr:    "0.0.0.0:8089",
 		Handler: mux,
 	}
+	// --------------- HANDLERS ---------------
 
 	logs.Info().Str("addr", server.Addr).Str("frontend", frontendPath).Msg("start server")
 

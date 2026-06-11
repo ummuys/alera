@@ -21,6 +21,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	pc := paint.NewPaintHub(ctx, logs)
-	web.RunServer(ctx, pc, logs)
+	ph := paint.NewPaintHub(ctx, logs)
+	web.RunServer(ctx, ph, logs)
 }

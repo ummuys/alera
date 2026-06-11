@@ -25,11 +25,14 @@ type paintHub struct {
 
 func NewPaintHub(ctx context.Context, logger zerolog.Logger) PaintHub {
 	return &paintHub{
-		rooms: make(map[string]*paintRoom),
+		ctx:    ctx,
+		rooms:  make(map[string]*paintRoom),
+		logger: logger,
 	}
 }
 
 func (ph *paintHub) CreateRoom(params CreateRoomParams) CreateRoomResult {
+
 	ph.roomMu.Lock()
 
 	rid := uuid.New().String()
@@ -39,8 +42,10 @@ func (ph *paintHub) CreateRoom(params CreateRoomParams) CreateRoomResult {
 	ph.roomMu.Unlock()
 
 	return CreateRoomResult{
-		ID:   rid,
-		Name: params.Name,
+		ID:           rid,
+		Name:         params.Name,
+		UserCapacity: params.UserCapacity,
+		Private:      params.Private,
 	}
 }
 
@@ -48,7 +53,7 @@ func (ph *paintHub) ListRooms() ListRoomsResult {
 	ph.roomMu.RLock()
 	defer ph.roomMu.RUnlock()
 
-	rooms := make([]Room, len(ph.rooms))
+	rooms := make([]Room, 0, len(ph.rooms))
 	for id, v := range ph.rooms {
 		rooms = append(rooms, Room{
 			ID:           id,

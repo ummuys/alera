@@ -48,15 +48,15 @@ func CreateRoom(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logge
 		return
 	}
 
-	res := ph.CreateRoom(paint.CreateRoomParams{
+	result := ph.CreateRoom(paint.CreateRoomParams{
 		Name:         req.Name,
 		UserCapacity: req.UserCapacity,
 		Private:      req.Private,
 	})
 
-	bytes, err := json.Marshal(res)
+	bytes, err := json.Marshal(result)
 	if err != nil {
-		logger.Warn().Str("host", r.Host).Str("err", err.Error()).Msg("can't marshall res")
+		logger.Warn().Str("host", r.Host).Str("err", err.Error()).Msg("can't marshall result")
 		http.Error(w, InternalErrorMessage, http.StatusInternalServerError)
 		return
 	}
@@ -72,16 +72,18 @@ func ListRooms(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger
 		return
 	}
 
-	res := ph.ListRooms()
-	var resp ListRoomsResponse
-	for _, r := range res.Rooms {
+	result := ph.ListRooms()
+	resp := ListRoomsResponse{
+		Rooms: make([]Rooms, 0, len(result.Rooms)),
+	}
+	for _, r := range result.Rooms {
 		respRoom := Rooms(r)
 		resp.Rooms = append(resp.Rooms, respRoom)
 	}
 
-	bytes, err := json.Marshal(res)
+	bytes, err := json.Marshal(resp)
 	if err != nil {
-		logger.Warn().Str("host", r.Host).Str("err", err.Error()).Msg("can't marshall res")
+		logger.Warn().Str("host", r.Host).Str("err", err.Error()).Msg("can't marshall result")
 		http.Error(w, InternalErrorMessage, http.StatusInternalServerError)
 		return
 	}
@@ -94,5 +96,5 @@ func sendRequest(w http.ResponseWriter, r *http.Request, resp []byte, msg string
 	w.WriteHeader(http.StatusOK)
 	w.Write(resp)
 
-	logger.Info().Str("host", r.Host).Msg("room created")
+	logger.Info().Str("host", r.Host).Msg(msg)
 }
