@@ -138,6 +138,7 @@ func (pr *paintRoom) broadcast() {
 				pr.clientMu.Lock()
 				c, ok := pr.clients[msg.ClientID]
 				pr.clientMu.Unlock()
+
 				if !ok {
 					continue
 				}

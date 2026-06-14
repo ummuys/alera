@@ -2,42 +2,27 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
+	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+	"github.com/ummuys/alera/internal/errs"
 	"github.com/ummuys/alera/internal/paint"
 )
 
-// var upgrade = websocket.Upgrader{
-// 	// Здесь мы проверяем какой клиент к нам подключается, пока даем доступ для всех
-// 	CheckOrigin: func(r *http.Request) bool {
-// 		return true
-// 	},
-// }
-
-// для request нужен указатель, так как это структура + тяжелая структура
-// rw - это интерфейс, он не передается по указателю
-// func paintWSHandle(w http.ResponseWriter, r *http.Request, ph paint.PaintHub) {
-
-// 	if http.MethodGet != r.Method {
-// 		http.Error(w, "bad method", http.StatusMethodNotAllowed)
-// 		return
-// 	}
-
-// 	// Пытаемся сделать upgrade
-// 	conn, err := upgrade.Upgrade(w, r, nil)
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	_ = conn
-// }
+var upgrade = websocket.Upgrader{
+	// Здесь мы проверяем какой клиент к нам подключается, пока даем доступ для всех
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
 func CreateRoom(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger zerolog.Logger) {
 
-	if r.Method != http.MethodPost {
-		logger.Warn().Str("host", r.Host).Msg("invalid method")
-		http.Error(w, InvalidMethodMessage, http.StatusMethodNotAllowed)
+	if !validMethod(w, r, http.MethodPost, logger) {
 		return
 	}
 
@@ -66,9 +51,7 @@ func CreateRoom(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logge
 
 func ListRooms(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger zerolog.Logger) {
 
-	if r.Method != http.MethodGet {
-		logger.Warn().Str("host", r.Host).Msg("invalid method")
-		http.Error(w, InvalidMethodMessage, http.StatusMethodNotAllowed)
+	if !validMethod(w, r, http.MethodGet, logger) {
 		return
 	}
 
@@ -91,10 +74,58 @@ func ListRooms(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger
 	sendRequest(w, r, bytes, "list rooms returned", logger)
 }
 
+func JoinRoom(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger zerolog.Logger) {
+
+	if !validMethod(w, r, http.MethodGet, logger) {
+		return
+	}
+
+	roomID := strings.TrimSpace(r.PathValue("room_id"))
+	if roomID == "" {
+		http.Error(w, "bad room_id", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Пытаемся сделать upgrade
+	conn, err := upgrade.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Warn().Err(err).Str("room_id", roomID).Msg("websocket upgrade failed")
+		return
+	}
+
+	if err := ph.JoinRoom(paint.JoinRoomParams{
+		RoomID: roomID,
+		Conn:   conn,
+	}); err != nil {
+
+		switch {
+		case errors.Is(err, errs.ErrRoomDoNotExists):
+			http.Error(w, err.Error(), http.StatusMethodNotAllowed)
+
+		default:
+			logger.Warn().Err(err).Str("room_id", roomID).Msg("default catch")
+			http.Error(w, errs.ErrInternal, http.StatusMethodNotAllowed)
+
+		}
+
+	}
+}
+
+// HELPER
 func sendRequest(w http.ResponseWriter, r *http.Request, resp []byte, msg string, logger zerolog.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(resp)
 
 	logger.Info().Str("host", r.Host).Msg(msg)
+}
+
+func validMethod(w http.ResponseWriter, r *http.Request, method any, logger zerolog.Logger) bool {
+	if method != r.Method {
+		msg := fmt.Sprintf("%s method didn't allowed for this endpoint", r.Method)
+		http.Error(w, msg, http.StatusMethodNotAllowed)
+		return false
+	}
+
+	return true
 }

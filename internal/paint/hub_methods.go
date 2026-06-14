@@ -6,12 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
+	"github.com/ummuys/alera/internal/errs"
 )
-
-type PaintHub interface {
-	CreateRoom(params CreateRoomParams) CreateRoomResult
-	ListRooms() ListRoomsResult
-}
 
 type paintHub struct {
 	ctx        context.Context    // Общий контекс
@@ -47,6 +43,18 @@ func (ph *paintHub) CreateRoom(params CreateRoomParams) CreateRoomResult {
 		UserCapacity: params.UserCapacity,
 		Private:      params.Private,
 	}
+}
+
+func (ph *paintHub) JoinRoom(params JoinRoomParams) error {
+	ph.roomMu.Lock()
+	room, ok := ph.rooms[params.RoomID]
+	ph.roomMu.Unlock()
+
+	if !ok {
+		return errs.ErrRoomDoNotExists
+	}
+	room.Add(params.Conn)
+	return nil
 }
 
 func (ph *paintHub) ListRooms() ListRoomsResult {

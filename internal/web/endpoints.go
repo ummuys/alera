@@ -7,4 +7,5 @@ const (
 
 	CreateRoomEndpoint = "POST " + RoomPath
 	ListRoomsEndpoint  = "GET " + RoomPath
+	JoinRoomEndpoint   = "GET " + RoomPath + "/{room_id}/ws"
 )

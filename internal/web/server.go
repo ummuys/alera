@@ -25,22 +25,13 @@ func RunServer(ctx context.Context, ph paint.PaintHub, logs zerolog.Logger) {
 	// Выдаем статические файлы, пока не используем Nginx.
 	mux.Handle("/", http.FileServer(http.Dir(frontendPath)))
 
-	// --------------- HANDLERS ---------------
-	logs.Info().Str("register route", CreateRoomEndpoint).Msg("")
-	mux.HandleFunc(CreateRoomEndpoint, func(w http.ResponseWriter, r *http.Request) {
-		CreateRoom(w, r, ph, logs)
-	})
-
-	logs.Info().Str("register route", ListRoomsEndpoint).Msg("")
-	mux.HandleFunc(ListRoomsEndpoint, func(w http.ResponseWriter, r *http.Request) {
-		ListRooms(w, r, ph, logs)
-	})
+	// Регистрируем endpoint-s
+	registerEndpoints(mux, ph, logs)
 
 	server := http.Server{
 		Addr:    "0.0.0.0:8089",
 		Handler: mux,
 	}
-	// --------------- HANDLERS ---------------
 
 	logs.Info().Str("addr", server.Addr).Str("frontend", frontendPath).Msg("start server")
 
@@ -64,6 +55,24 @@ func RunServer(ctx context.Context, ph paint.PaintHub, logs zerolog.Logger) {
 
 	wg.Wait()
 	logs.Info().Msg("server stopped")
+}
+
+func registerEndpoints(mux *http.ServeMux, ph paint.PaintHub, logs zerolog.Logger) {
+	logs.Info().Str("register route", CreateRoomEndpoint).Msg("")
+	mux.HandleFunc(CreateRoomEndpoint, func(w http.ResponseWriter, r *http.Request) {
+		CreateRoom(w, r, ph, logs)
+	})
+
+	logs.Info().Str("register route", ListRoomsEndpoint).Msg("")
+	mux.HandleFunc(ListRoomsEndpoint, func(w http.ResponseWriter, r *http.Request) {
+		ListRooms(w, r, ph, logs)
+	})
+
+	logs.Info().Str("register route", JoinRoomEndpoint).Msg("")
+	mux.HandleFunc(JoinRoomEndpoint, func(w http.ResponseWriter, r *http.Request) {
+		JoinRoom(w, r, ph, logs)
+	})
+
 }
 
 func resolveFrontendPath() string {
