@@ -1,15 +1,15 @@
 /**
  * app.js
  *
- * Точка входа frontend-а.
+ * Frontend entrypoint.
  *
- * Новый flow:
- * 1. frontend загружается обычным HTTP;
- * 2. пользователь выбирает существующую комнату или создаёт новую через HTTP API;
- * 3. пользователь вводит nickname/color;
- * 4. frontend открывает WebSocket именно в выбранную комнату:
- *    /api/v1/room/{room_id}/ws;
- * 5. canvas/чат считаются активными только после server message type=session.
+ * Flow:
+ * 1. browser loads frontend over HTTP;
+ * 2. UI wizard asks: create room or join room;
+ * 3. frontend calls room HTTP endpoints;
+ * 4. user enters nickname/color;
+ * 5. frontend opens WebSocket /api/v1/room/{room_id}/ws;
+ * 6. canvas/chat become active only after server session event.
  */
 
 import { UI } from './ui.js';
@@ -63,13 +63,14 @@ async function requestJson(path, options = {}) {
     try {
       data = JSON.parse(text);
     } catch (error) {
-      throw new Error(`Backend вернул не JSON: ${text}`);
+      // Go http.Error often returns plain text. Keep it as useful message.
+      data = null;
     }
   }
 
   if (!response.ok) {
     const message = data?.message || data?.error || text || `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new Error(message.trim());
   }
 
   return data;
@@ -110,7 +111,7 @@ async function createRoom({ name, userCapacity, private: isPrivate }) {
     throw new Error('Введите название комнаты');
   }
 
-  const normalizedCapacity = Math.max(1, Number(userCapacity) || 10);
+  const normalizedCapacity = Math.max(1, Math.min(100, Number(userCapacity) || 10));
 
   const data = await requestJson('/room', {
     method: 'POST',
@@ -124,6 +125,20 @@ async function createRoom({ name, userCapacity, private: isPrivate }) {
   return normalizeRoom(data);
 }
 
+async function deleteRoom(roomId) {
+  const normalizedRoomId = String(roomId || '').trim();
+
+  if (!normalizedRoomId) {
+    throw new Error('roomId is required');
+  }
+
+  await requestJson(`/room/${encodeURIComponent(normalizedRoomId)}`, {
+    method: 'DELETE',
+  });
+
+  return normalizedRoomId;
+}
+
 async function askJoinOptions(ui) {
   return ui.openJoinDialog({
     nickname: createFallbackNickname(),
@@ -131,6 +146,7 @@ async function askJoinOptions(ui) {
     roomId: getRequestedRoomId(),
     loadRooms,
     createRoom,
+    deleteRoom,
   });
 }
 

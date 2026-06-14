@@ -287,16 +287,15 @@ class CanvasHandler {
 /**
  * ui.js
  *
- * UI-слой.
+ * DOM/UI layer.
  *
- * Этот класс отвечает только за DOM:
- * - поиск обязательных элементов;
- * - отображение статуса соединения;
- * - lobby комнат: список, создание, выбор;
- * - отображение текущего пользователя;
- * - отображение online users;
- * - отображение сообщений чата;
- * - обновление preview кисти.
+ * It does not own backend state. It only renders:
+ * - staged room wizard;
+ * - connection status;
+ * - current user;
+ * - online users;
+ * - chat;
+ * - brush preview.
  */
 
 class UI {
@@ -324,18 +323,39 @@ class UI {
 
     this.joinOverlay = this.getRequiredElement('joinOverlay');
     this.joinForm = this.getRequiredElement('joinForm');
-    this.joinNicknameInput = this.getRequiredElement('joinNicknameInput');
-    this.joinCursorColorInput = this.getRequiredElement('joinCursorColorInput');
-    this.joinCursorColorPreview = this.getRequiredElement('joinCursorColorPreview');
-    this.joinColorPalette = this.getRequiredElement('joinColorPalette');
+    this.joinTitle = this.getRequiredElement('joinTitle');
+    this.joinSubtitle = this.getRequiredElement('joinSubtitle');
+    this.wizardGlobalStatus = this.getRequiredElement('wizardGlobalStatus');
 
-    this.joinRoomStatus = this.getRequiredElement('joinRoomStatus');
-    this.joinRoomsList = this.getRequiredElement('joinRoomsList');
-    this.refreshRoomsButton = this.getRequiredElement('refreshRoomsButton');
+    this.wizardDotAction = this.getRequiredElement('wizardDotAction');
+    this.wizardDotRoom = this.getRequiredElement('wizardDotRoom');
+    this.wizardDotProfile = this.getRequiredElement('wizardDotProfile');
+    this.wizardStepAction = this.getRequiredElement('wizardStepAction');
+    this.wizardStepCreate = this.getRequiredElement('wizardStepCreate');
+    this.wizardStepJoin = this.getRequiredElement('wizardStepJoin');
+    this.wizardStepProfile = this.getRequiredElement('wizardStepProfile');
+
+    this.actionCreateButton = this.getRequiredElement('actionCreateButton');
+    this.actionJoinButton = this.getRequiredElement('actionJoinButton');
+
+    this.createRoomBackButton = this.getRequiredElement('createRoomBackButton');
     this.createRoomNameInput = this.getRequiredElement('createRoomNameInput');
     this.createRoomCapacityInput = this.getRequiredElement('createRoomCapacityInput');
     this.createRoomPrivateInput = this.getRequiredElement('createRoomPrivateInput');
     this.createRoomButton = this.getRequiredElement('createRoomButton');
+
+    this.joinRoomBackButton = this.getRequiredElement('joinRoomBackButton');
+    this.joinRoomNextButton = this.getRequiredElement('joinRoomNextButton');
+    this.joinRoomStatus = this.getRequiredElement('joinRoomStatus');
+    this.joinRoomsList = this.getRequiredElement('joinRoomsList');
+    this.refreshRoomsButton = this.getRequiredElement('refreshRoomsButton');
+
+    this.profileBackButton = this.getRequiredElement('profileBackButton');
+    this.selectedRoomSummary = this.getRequiredElement('selectedRoomSummary');
+    this.joinNicknameInput = this.getRequiredElement('joinNicknameInput');
+    this.joinCursorColorInput = this.getRequiredElement('joinCursorColorInput');
+    this.joinCursorColorPreview = this.getRequiredElement('joinCursorColorPreview');
+    this.joinColorPalette = this.getRequiredElement('joinColorPalette');
 
     this.cursorPaletteColors = [
       '#7c3aed',
@@ -377,9 +397,13 @@ class UI {
     const preferredRoomId = String(defaults.roomId || '').trim();
     const loadRooms = defaults.loadRooms;
     const createRoom = defaults.createRoom;
+    const deleteRoom = defaults.deleteRoom;
 
     let rooms = [];
     let selectedRoomId = preferredRoomId;
+    let selectedRoom = null;
+    let actionMode = '';
+    let currentStep = 'action';
     let isBusy = false;
 
     this.joinNicknameInput.value = fallbackNickname;
@@ -390,7 +414,10 @@ class UI {
     this.updateJoinCursorColor(fallbackColor);
     this.renderJoinColorPalette(fallbackColor);
     this.renderJoinRoomsList([], selectedRoomId);
-    this.setJoinRoomStatus('Загрузка комнат...');
+    this.setJoinRoomStatus('Комнаты ещё не загружены');
+    this.setWizardGlobalStatus('');
+    this.renderSelectedRoomSummary(null);
+    this.showWizardStep('action');
 
     this.joinOverlay.hidden = false;
     this.joinOverlay.classList.add('visible');
@@ -398,14 +425,65 @@ class UI {
 
     const setBusy = (value) => {
       isBusy = Boolean(value);
+      this.actionCreateButton.disabled = isBusy;
+      this.actionJoinButton.disabled = isBusy;
       this.refreshRoomsButton.disabled = isBusy;
       this.createRoomButton.disabled = isBusy;
-      this.joinForm.querySelector('.join-submit').disabled = isBusy;
+      this.joinRoomNextButton.disabled = isBusy;
+      this.createRoomBackButton.disabled = isBusy;
+      this.joinRoomBackButton.disabled = isBusy;
+      this.profileBackButton.disabled = isBusy;
+      this.joinForm.querySelector('.join-submit[type="submit"]').disabled = isBusy;
     };
 
     const selectRoom = (roomId) => {
       selectedRoomId = String(roomId || '').trim();
+      selectedRoom = rooms.find((room) => room.id === selectedRoomId) || null;
       this.renderJoinRoomsList(rooms, selectedRoomId);
+      this.renderSelectedRoomSummary(selectedRoom || { id: selectedRoomId, name: selectedRoomId });
+
+      if (selectedRoom) {
+        this.setJoinRoomStatus(`Выбрана комната «${selectedRoom.name}»`);
+      }
+    };
+
+    const showActionStep = () => {
+      actionMode = '';
+      currentStep = 'action';
+      this.setWizardGlobalStatus('');
+      this.showWizardStep('action');
+    };
+
+    const showCreateStep = () => {
+      actionMode = 'create';
+      currentStep = 'create';
+      this.setWizardGlobalStatus('');
+      this.showWizardStep('create');
+      window.setTimeout(() => this.createRoomNameInput.focus(), 0);
+    };
+
+    const showJoinStep = async () => {
+      actionMode = 'join';
+      currentStep = 'join';
+      this.setWizardGlobalStatus('');
+      this.showWizardStep('join');
+      await reloadRooms();
+    };
+
+    const showProfileStep = () => {
+      if (!selectedRoomId) {
+        this.setWizardGlobalStatus('Сначала выберите или создайте комнату');
+        return;
+      }
+
+      currentStep = 'profile';
+      this.renderSelectedRoomSummary(selectedRoom || { id: selectedRoomId, name: selectedRoomId });
+      this.setWizardGlobalStatus('');
+      this.showWizardStep('profile');
+      window.setTimeout(() => {
+        this.joinNicknameInput.focus();
+        this.joinNicknameInput.select();
+      }, 0);
     };
 
     const reloadRooms = async () => {
@@ -423,15 +501,19 @@ class UI {
         const selectedExists = rooms.some((room) => room.id === selectedRoomId);
 
         if (!selectedExists) {
-          selectedRoomId = rooms[0]?.id || '';
+          selectedRoomId = preferredRoomId && rooms.some((room) => room.id === preferredRoomId)
+            ? preferredRoomId
+            : rooms[0]?.id || '';
         }
 
+        selectedRoom = rooms.find((room) => room.id === selectedRoomId) || null;
         this.renderJoinRoomsList(rooms, selectedRoomId);
+        this.renderSelectedRoomSummary(selectedRoom);
 
         if (rooms.length === 0) {
-          this.setJoinRoomStatus('Комнат пока нет. Создайте первую комнату.');
+          this.setJoinRoomStatus('Комнат пока нет. Вернитесь назад и создайте первую комнату.');
         } else if (preferredRoomId && !rooms.some((room) => room.id === preferredRoomId)) {
-          this.setJoinRoomStatus('Комната из URL не найдена. Выберите другую или создайте новую.');
+          this.setJoinRoomStatus('Комната из URL не найдена. Выберите другую комнату.');
         } else {
           this.setJoinRoomStatus(`Доступно комнат: ${rooms.length}`);
         }
@@ -446,7 +528,7 @@ class UI {
 
     const handleCreateRoom = async () => {
       if (typeof createRoom !== 'function') {
-        this.setJoinRoomStatus('Функция создания комнаты не передана');
+        this.setWizardGlobalStatus('Функция создания комнаты не передана');
         return;
       }
 
@@ -455,31 +537,65 @@ class UI {
       const isPrivate = this.createRoomPrivateInput.checked;
 
       setBusy(true);
-      this.setJoinRoomStatus('Создание комнаты...');
+      this.setWizardGlobalStatus('Создание комнаты...');
 
       try {
         const createdRoom = await createRoom({ name, userCapacity, private: isPrivate });
 
         rooms = [createdRoom, ...rooms.filter((room) => room.id !== createdRoom.id)];
         selectedRoomId = createdRoom.id;
+        selectedRoom = createdRoom;
 
         this.createRoomNameInput.value = '';
         this.createRoomCapacityInput.value = '10';
         this.createRoomPrivateInput.checked = false;
         this.renderJoinRoomsList(rooms, selectedRoomId);
-        this.setJoinRoomStatus(`Комната «${createdRoom.name}» создана и выбрана`);
+        this.renderSelectedRoomSummary(createdRoom);
+        this.setWizardGlobalStatus(`Комната «${createdRoom.name}» создана`);
+        showProfileStep();
       } catch (error) {
         console.error('Cannot create room:', error);
-        this.setJoinRoomStatus(`Не удалось создать комнату: ${error.message}`);
+        this.setWizardGlobalStatus(`Не удалось создать комнату: ${error.message}`);
       } finally {
         setBusy(false);
       }
     };
 
-    window.setTimeout(() => {
-      this.joinNicknameInput.focus();
-      this.joinNicknameInput.select();
-    }, 0);
+    const handleDeleteRoom = async (roomId) => {
+      if (typeof deleteRoom !== 'function') {
+        this.setJoinRoomStatus('Функция удаления комнаты не передана');
+        return;
+      }
+
+      const room = rooms.find((item) => item.id === roomId);
+      const roomName = room?.name || roomId;
+
+      if (!window.confirm(`Удалить комнату «${roomName}»?`)) {
+        return;
+      }
+
+      setBusy(true);
+      this.setJoinRoomStatus(`Удаление комнаты «${roomName}»...`);
+
+      try {
+        await deleteRoom(roomId);
+        rooms = rooms.filter((item) => item.id !== roomId);
+
+        if (selectedRoomId === roomId) {
+          selectedRoomId = rooms[0]?.id || '';
+          selectedRoom = rooms.find((item) => item.id === selectedRoomId) || null;
+        }
+
+        this.renderJoinRoomsList(rooms, selectedRoomId);
+        this.renderSelectedRoomSummary(selectedRoom);
+        this.setJoinRoomStatus(rooms.length > 0 ? `Комната «${roomName}» удалена` : 'Комнат пока нет');
+      } catch (error) {
+        console.error('Cannot delete room:', error);
+        this.setJoinRoomStatus(`Не удалось удалить комнату: ${error.message}`);
+      } finally {
+        setBusy(false);
+      }
+    };
 
     const dialogPromise = new Promise((resolve) => {
       const handleSubmit = (event) => {
@@ -490,13 +606,13 @@ class UI {
         }
 
         if (!selectedRoomId) {
-          this.setJoinRoomStatus('Сначала выберите или создайте комнату');
+          this.setWizardGlobalStatus('Сначала выберите или создайте комнату');
           return;
         }
 
-        const selectedRoom = rooms.find((room) => room.id === selectedRoomId);
         const nickname = this.joinNicknameInput.value.trim() || fallbackNickname;
         const color = this.normalizeHexColor(this.joinCursorColorInput.value, fallbackColor);
+        const finalRoom = selectedRoom || rooms.find((room) => room.id === selectedRoomId);
 
         cleanup();
         this.joinOverlay.classList.remove('visible');
@@ -507,7 +623,7 @@ class UI {
           nickname,
           color,
           roomId: selectedRoomId,
-          roomName: selectedRoom?.name || selectedRoomId,
+          roomName: finalRoom?.name || selectedRoomId,
         });
       };
 
@@ -531,6 +647,15 @@ class UI {
       };
 
       const handleRoomsClick = (event) => {
+        const deleteButton = event.target.closest('[data-delete-room-id]');
+
+        if (deleteButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleDeleteRoom(deleteButton.dataset.deleteRoomId);
+          return;
+        }
+
         const button = event.target.closest('[data-room-id]');
 
         if (!button) {
@@ -549,6 +674,30 @@ class UI {
         handleCreateRoom();
       };
 
+      const handleJoinNext = () => {
+        if (!selectedRoomId) {
+          this.setJoinRoomStatus('Сначала выберите комнату');
+          return;
+        }
+
+        showProfileStep();
+      };
+
+      const handleProfileBack = () => {
+        if (actionMode === 'create') {
+          showCreateStep();
+          return;
+        }
+
+        if (actionMode === 'join') {
+          currentStep = 'join';
+          this.showWizardStep('join');
+          return;
+        }
+
+        showActionStep();
+      };
+
       const cleanup = () => {
         this.joinForm.removeEventListener('submit', handleSubmit);
         this.joinCursorColorInput.removeEventListener('input', handleColorInput);
@@ -557,6 +706,12 @@ class UI {
         this.refreshRoomsButton.removeEventListener('click', reloadRooms);
         this.createRoomButton.removeEventListener('click', handleCreateRoom);
         this.createRoomNameInput.removeEventListener('keydown', handleCreateRoomKeydown);
+        this.actionCreateButton.removeEventListener('click', showCreateStep);
+        this.actionJoinButton.removeEventListener('click', showJoinStep);
+        this.createRoomBackButton.removeEventListener('click', showActionStep);
+        this.joinRoomBackButton.removeEventListener('click', showActionStep);
+        this.joinRoomNextButton.removeEventListener('click', handleJoinNext);
+        this.profileBackButton.removeEventListener('click', handleProfileBack);
       };
 
       this.joinForm.addEventListener('submit', handleSubmit);
@@ -566,15 +721,78 @@ class UI {
       this.refreshRoomsButton.addEventListener('click', reloadRooms);
       this.createRoomButton.addEventListener('click', handleCreateRoom);
       this.createRoomNameInput.addEventListener('keydown', handleCreateRoomKeydown);
+      this.actionCreateButton.addEventListener('click', showCreateStep);
+      this.actionJoinButton.addEventListener('click', showJoinStep);
+      this.createRoomBackButton.addEventListener('click', showActionStep);
+      this.joinRoomBackButton.addEventListener('click', showActionStep);
+      this.joinRoomNextButton.addEventListener('click', handleJoinNext);
+      this.profileBackButton.addEventListener('click', handleProfileBack);
     });
 
-    reloadRooms();
+    window.setTimeout(() => this.actionCreateButton.focus(), 0);
 
     return dialogPromise;
   }
 
+  showWizardStep(step) {
+    const normalizedStep = String(step || 'action');
+    const titles = {
+      action: 'Что сделать?',
+      create: 'Создать комнату',
+      join: 'Присоединиться к комнате',
+      profile: 'Последний шаг',
+    };
+
+    const subtitles = {
+      action: 'Сначала выберите действие. После этого откроется следующий шаг.',
+      create: 'Создайте комнату через HTTP endpoint, затем frontend перейдёт к настройке профиля.',
+      join: 'Выберите комнату из списка. Список приходит с backend через GET /api/v1/room.',
+      profile: 'Введите nickname и цвет курсора. После отправки формы откроется WebSocket комнаты.',
+    };
+
+    this.joinTitle.textContent = titles[normalizedStep] || titles.action;
+    this.joinSubtitle.textContent = subtitles[normalizedStep] || subtitles.action;
+
+    this.wizardStepAction.classList.toggle('active', normalizedStep === 'action');
+    this.wizardStepCreate.classList.toggle('active', normalizedStep === 'create');
+    this.wizardStepJoin.classList.toggle('active', normalizedStep === 'join');
+    this.wizardStepProfile.classList.toggle('active', normalizedStep === 'profile');
+
+    this.wizardDotAction.classList.toggle('active', normalizedStep === 'action');
+    this.wizardDotRoom.classList.toggle('active', normalizedStep === 'create' || normalizedStep === 'join');
+    this.wizardDotProfile.classList.toggle('active', normalizedStep === 'profile');
+  }
+
+  setWizardGlobalStatus(message) {
+    this.wizardGlobalStatus.textContent = message || '';
+    this.wizardGlobalStatus.hidden = !message;
+  }
+
   setJoinRoomStatus(message) {
     this.joinRoomStatus.textContent = message || '';
+  }
+
+  renderSelectedRoomSummary(room) {
+    this.selectedRoomSummary.innerHTML = '';
+
+    if (!room?.id) {
+      this.selectedRoomSummary.textContent = 'Комната ещё не выбрана';
+      return;
+    }
+
+    const title = document.createElement('div');
+    title.className = 'selected-room-title';
+    title.textContent = room.name || room.id;
+
+    const meta = document.createElement('div');
+    meta.className = 'selected-room-meta';
+    meta.textContent = [
+      `id: ${room.id}`,
+      room.userCapacity > 0 ? `лимит: ${room.userCapacity}` : '',
+      room.private ? 'private' : 'public',
+    ].filter(Boolean).join(' · ');
+
+    this.selectedRoomSummary.append(title, meta);
   }
 
   renderJoinRoomsList(rooms = [], selectedRoomId = '') {
@@ -589,6 +807,9 @@ class UI {
     }
 
     rooms.forEach((room) => {
+      const row = document.createElement('div');
+      row.className = 'join-room-row';
+
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'join-room-item';
@@ -612,7 +833,16 @@ class UI {
       ].filter(Boolean).join(' · ');
 
       button.append(title, meta);
-      this.joinRoomsList.appendChild(button);
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'join-room-delete-button';
+      deleteButton.dataset.deleteRoomId = room.id;
+      deleteButton.title = `Удалить комнату ${room.name || room.id}`;
+      deleteButton.textContent = 'Удалить';
+
+      row.append(button, deleteButton);
+      this.joinRoomsList.appendChild(row);
     });
   }
 
@@ -1301,15 +1531,15 @@ class EventHandler {
 /**
  * app.js
  *
- * Точка входа frontend-а.
+ * Frontend entrypoint.
  *
- * Новый flow:
- * 1. frontend загружается обычным HTTP;
- * 2. пользователь выбирает существующую комнату или создаёт новую через HTTP API;
- * 3. пользователь вводит nickname/color;
- * 4. frontend открывает WebSocket именно в выбранную комнату:
- *    /api/v1/room/{room_id}/ws;
- * 5. canvas/чат считаются активными только после server message type=session.
+ * Flow:
+ * 1. browser loads frontend over HTTP;
+ * 2. UI wizard asks: create room or join room;
+ * 3. frontend calls room HTTP endpoints;
+ * 4. user enters nickname/color;
+ * 5. frontend opens WebSocket /api/v1/room/{room_id}/ws;
+ * 6. canvas/chat become active only after server session event.
  */
 
 
@@ -1359,13 +1589,14 @@ async function requestJson(path, options = {}) {
     try {
       data = JSON.parse(text);
     } catch (error) {
-      throw new Error(`Backend вернул не JSON: ${text}`);
+      // Go http.Error often returns plain text. Keep it as useful message.
+      data = null;
     }
   }
 
   if (!response.ok) {
     const message = data?.message || data?.error || text || `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new Error(message.trim());
   }
 
   return data;
@@ -1406,7 +1637,7 @@ async function createRoom({ name, userCapacity, private: isPrivate }) {
     throw new Error('Введите название комнаты');
   }
 
-  const normalizedCapacity = Math.max(1, Number(userCapacity) || 10);
+  const normalizedCapacity = Math.max(1, Math.min(100, Number(userCapacity) || 10));
 
   const data = await requestJson('/room', {
     method: 'POST',
@@ -1420,6 +1651,20 @@ async function createRoom({ name, userCapacity, private: isPrivate }) {
   return normalizeRoom(data);
 }
 
+async function deleteRoom(roomId) {
+  const normalizedRoomId = String(roomId || '').trim();
+
+  if (!normalizedRoomId) {
+    throw new Error('roomId is required');
+  }
+
+  await requestJson(`/room/${encodeURIComponent(normalizedRoomId)}`, {
+    method: 'DELETE',
+  });
+
+  return normalizedRoomId;
+}
+
 async function askJoinOptions(ui) {
   return ui.openJoinDialog({
     nickname: createFallbackNickname(),
@@ -1427,6 +1672,7 @@ async function askJoinOptions(ui) {
     roomId: getRequestedRoomId(),
     loadRooms,
     createRoom,
+    deleteRoom,
   });
 }
 

@@ -898,3 +898,229 @@ body.join-dialog-open .app {
     flex: 0 1 auto;
   }
 }
+
+/* ===== Staged room wizard ===== */
+.wizard-card {
+  width: min(680px, 100%);
+}
+
+.wizard-topline,
+.wizard-section-title,
+.wizard-section-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wizard-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wizard-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.18);
+  transition: width 0.2s ease, background 0.2s ease;
+}
+
+.wizard-dot.active {
+  width: 28px;
+  background: #7c3aed;
+}
+
+.wizard-global-status {
+  position: relative;
+  margin: 0 0 16px;
+  padding: 11px 13px;
+  border-radius: 15px;
+  color: #312e81;
+  background: rgba(124, 58, 237, 0.09);
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.wizard-global-status[hidden] {
+  display: none;
+}
+
+.wizard-step {
+  position: relative;
+  display: none;
+}
+
+.wizard-step.active {
+  display: block;
+  animation: wizardStepIn 0.22s ease;
+}
+
+@keyframes wizardStepIn {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.wizard-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.wizard-choice-card {
+  display: flex;
+  min-height: 184px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 22px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+  text-align: left;
+  white-space: normal;
+}
+
+.wizard-choice-card:hover {
+  background: #ffffff;
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+}
+
+.wizard-choice-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #111827, #4338ca);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.wizard-choice-title {
+  color: #111827;
+  font-size: 18px;
+  font-weight: 850;
+}
+
+.wizard-choice-text {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.wizard-section-title {
+  margin-bottom: 16px;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.selected-room-summary {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(17, 24, 39, 0.045);
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.selected-room-title {
+  margin-bottom: 5px;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.selected-room-meta {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.wizard-rooms-list {
+  max-height: 280px;
+  margin-bottom: 14px;
+}
+
+.join-room-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.join-room-row .join-room-item {
+  min-width: 0;
+}
+
+.join-room-delete-button {
+  align-self: stretch;
+  justify-content: center;
+  padding: 8px 11px;
+  border-radius: 14px;
+  color: #991b1b;
+  background: rgba(239, 68, 68, 0.09);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.join-room-delete-button:hover {
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.join-field input[type='number'],
+.join-field input[type='text'] {
+  width: 100%;
+  border: 1px solid rgba(17, 24, 39, 0.1);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #111827;
+  font-size: 15px;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.join-field input[type='number']:focus,
+.join-field input[type='text']:focus {
+  border-color: rgba(124, 58, 237, 0.55);
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+}
+
+@media (max-width: 620px) {
+  .wizard-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-choice-card {
+    min-height: 142px;
+  }
+
+  .join-room-row {
+    grid-template-columns: 1fr;
+  }
+
+  .join-room-delete-button {
+    min-height: 40px;
+  }
+
+  .wizard-topline,
+  .wizard-section-title,
+  .wizard-section-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
