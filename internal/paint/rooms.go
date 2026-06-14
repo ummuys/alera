@@ -79,7 +79,7 @@ func (pr *paintRoom) Add(conn *websocket.Conn) {
 	}()
 }
 
-func (pr *paintRoom) Close() {
+func (pr *paintRoom) Close() RoomStatus {
 	pr.cancelFunc()
 
 	pr.clientMu.Lock()
@@ -87,7 +87,8 @@ func (pr *paintRoom) Close() {
 	// Делаем снапшот актуальных клиентов
 	// В этот раз мы закрываем websockets с нашей стороны,
 	// так как закрывается весь хаб
-	clients := make([]*client, 0, len(pr.clients))
+	before := len(pr.clients)
+	clients := make([]*client, 0, before)
 	for _, client := range pr.clients {
 		clients = append(clients, client)
 	}
@@ -97,7 +98,14 @@ func (pr *paintRoom) Close() {
 		client.end()
 	}
 
-	return
+	pr.clientMu.Lock()
+	after := len(pr.clients)
+	pr.clientMu.Unlock()
+
+	return RoomStatus{
+		BeforeOnline: before,
+		AfterOnline:  after,
+	}
 }
 
 func (pr *paintRoom) remove(id string) {

@@ -6,13 +6,11 @@
  * Этот класс отвечает только за DOM:
  * - поиск обязательных элементов;
  * - отображение статуса соединения;
+ * - lobby комнат: список, создание, выбор;
  * - отображение текущего пользователя;
  * - отображение online users;
  * - отображение сообщений чата;
  * - обновление preview кисти.
- *
- * Здесь НЕ должно быть WebSocket-соединения, бизнес-валидации,
- * хранения комнат, вычисления online users или назначения clientId.
  */
 
 export class UI {
@@ -45,6 +43,14 @@ export class UI {
     this.joinCursorColorPreview = this.getRequiredElement('joinCursorColorPreview');
     this.joinColorPalette = this.getRequiredElement('joinColorPalette');
 
+    this.joinRoomStatus = this.getRequiredElement('joinRoomStatus');
+    this.joinRoomsList = this.getRequiredElement('joinRoomsList');
+    this.refreshRoomsButton = this.getRequiredElement('refreshRoomsButton');
+    this.createRoomNameInput = this.getRequiredElement('createRoomNameInput');
+    this.createRoomCapacityInput = this.getRequiredElement('createRoomCapacityInput');
+    this.createRoomPrivateInput = this.getRequiredElement('createRoomPrivateInput');
+    this.createRoomButton = this.getRequiredElement('createRoomButton');
+
     this.cursorPaletteColors = [
       '#7c3aed',
       '#2563eb',
@@ -75,36 +81,134 @@ export class UI {
     this.statusText.textContent = status;
   }
 
-  /**
-   * Показывает nickname, подтверждённый backend-ом.
-   */
   setCurrentUser(nickname) {
     this.chatNickname.textContent = nickname || '';
   }
 
-
   openJoinDialog(defaults = {}) {
     const fallbackNickname = String(defaults.nickname || 'User').trim() || 'User';
     const fallbackColor = this.normalizeHexColor(defaults.color, '#7c3aed');
+    const preferredRoomId = String(defaults.roomId || '').trim();
+    const loadRooms = defaults.loadRooms;
+    const createRoom = defaults.createRoom;
+
+    let rooms = [];
+    let selectedRoomId = preferredRoomId;
+    let isBusy = false;
 
     this.joinNicknameInput.value = fallbackNickname;
     this.joinCursorColorInput.value = fallbackColor;
+    this.createRoomNameInput.value = '';
+    this.createRoomCapacityInput.value = '10';
+    this.createRoomPrivateInput.checked = false;
     this.updateJoinCursorColor(fallbackColor);
     this.renderJoinColorPalette(fallbackColor);
+    this.renderJoinRoomsList([], selectedRoomId);
+    this.setJoinRoomStatus('Загрузка комнат...');
 
     this.joinOverlay.hidden = false;
     this.joinOverlay.classList.add('visible');
     document.body.classList.add('join-dialog-open');
+
+    const setBusy = (value) => {
+      isBusy = Boolean(value);
+      this.refreshRoomsButton.disabled = isBusy;
+      this.createRoomButton.disabled = isBusy;
+      this.joinForm.querySelector('.join-submit').disabled = isBusy;
+    };
+
+    const selectRoom = (roomId) => {
+      selectedRoomId = String(roomId || '').trim();
+      this.renderJoinRoomsList(rooms, selectedRoomId);
+    };
+
+    const reloadRooms = async () => {
+      if (typeof loadRooms !== 'function') {
+        this.setJoinRoomStatus('Функция загрузки комнат не передана');
+        return;
+      }
+
+      setBusy(true);
+      this.setJoinRoomStatus('Загрузка комнат...');
+
+      try {
+        rooms = await loadRooms();
+
+        const selectedExists = rooms.some((room) => room.id === selectedRoomId);
+
+        if (!selectedExists) {
+          selectedRoomId = rooms[0]?.id || '';
+        }
+
+        this.renderJoinRoomsList(rooms, selectedRoomId);
+
+        if (rooms.length === 0) {
+          this.setJoinRoomStatus('Комнат пока нет. Создайте первую комнату.');
+        } else if (preferredRoomId && !rooms.some((room) => room.id === preferredRoomId)) {
+          this.setJoinRoomStatus('Комната из URL не найдена. Выберите другую или создайте новую.');
+        } else {
+          this.setJoinRoomStatus(`Доступно комнат: ${rooms.length}`);
+        }
+      } catch (error) {
+        console.error('Cannot load rooms:', error);
+        this.setJoinRoomStatus(`Не удалось загрузить комнаты: ${error.message}`);
+        this.renderJoinRoomsList([], selectedRoomId);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const handleCreateRoom = async () => {
+      if (typeof createRoom !== 'function') {
+        this.setJoinRoomStatus('Функция создания комнаты не передана');
+        return;
+      }
+
+      const name = this.createRoomNameInput.value.trim();
+      const userCapacity = Number(this.createRoomCapacityInput.value) || 10;
+      const isPrivate = this.createRoomPrivateInput.checked;
+
+      setBusy(true);
+      this.setJoinRoomStatus('Создание комнаты...');
+
+      try {
+        const createdRoom = await createRoom({ name, userCapacity, private: isPrivate });
+
+        rooms = [createdRoom, ...rooms.filter((room) => room.id !== createdRoom.id)];
+        selectedRoomId = createdRoom.id;
+
+        this.createRoomNameInput.value = '';
+        this.createRoomCapacityInput.value = '10';
+        this.createRoomPrivateInput.checked = false;
+        this.renderJoinRoomsList(rooms, selectedRoomId);
+        this.setJoinRoomStatus(`Комната «${createdRoom.name}» создана и выбрана`);
+      } catch (error) {
+        console.error('Cannot create room:', error);
+        this.setJoinRoomStatus(`Не удалось создать комнату: ${error.message}`);
+      } finally {
+        setBusy(false);
+      }
+    };
 
     window.setTimeout(() => {
       this.joinNicknameInput.focus();
       this.joinNicknameInput.select();
     }, 0);
 
-    return new Promise((resolve) => {
+    const dialogPromise = new Promise((resolve) => {
       const handleSubmit = (event) => {
         event.preventDefault();
 
+        if (isBusy) {
+          return;
+        }
+
+        if (!selectedRoomId) {
+          this.setJoinRoomStatus('Сначала выберите или создайте комнату');
+          return;
+        }
+
+        const selectedRoom = rooms.find((room) => room.id === selectedRoomId);
         const nickname = this.joinNicknameInput.value.trim() || fallbackNickname;
         const color = this.normalizeHexColor(this.joinCursorColorInput.value, fallbackColor);
 
@@ -113,7 +217,12 @@ export class UI {
         this.joinOverlay.hidden = true;
         document.body.classList.remove('join-dialog-open');
 
-        resolve({ nickname, color });
+        resolve({
+          nickname,
+          color,
+          roomId: selectedRoomId,
+          roomName: selectedRoom?.name || selectedRoomId,
+        });
       };
 
       const handleColorInput = () => {
@@ -135,15 +244,89 @@ export class UI {
         this.markSelectedJoinColor(color);
       };
 
+      const handleRoomsClick = (event) => {
+        const button = event.target.closest('[data-room-id]');
+
+        if (!button) {
+          return;
+        }
+
+        selectRoom(button.dataset.roomId);
+      };
+
+      const handleCreateRoomKeydown = (event) => {
+        if (event.key !== 'Enter') {
+          return;
+        }
+
+        event.preventDefault();
+        handleCreateRoom();
+      };
+
       const cleanup = () => {
         this.joinForm.removeEventListener('submit', handleSubmit);
         this.joinCursorColorInput.removeEventListener('input', handleColorInput);
         this.joinColorPalette.removeEventListener('click', handlePaletteClick);
+        this.joinRoomsList.removeEventListener('click', handleRoomsClick);
+        this.refreshRoomsButton.removeEventListener('click', reloadRooms);
+        this.createRoomButton.removeEventListener('click', handleCreateRoom);
+        this.createRoomNameInput.removeEventListener('keydown', handleCreateRoomKeydown);
       };
 
       this.joinForm.addEventListener('submit', handleSubmit);
       this.joinCursorColorInput.addEventListener('input', handleColorInput);
       this.joinColorPalette.addEventListener('click', handlePaletteClick);
+      this.joinRoomsList.addEventListener('click', handleRoomsClick);
+      this.refreshRoomsButton.addEventListener('click', reloadRooms);
+      this.createRoomButton.addEventListener('click', handleCreateRoom);
+      this.createRoomNameInput.addEventListener('keydown', handleCreateRoomKeydown);
+    });
+
+    reloadRooms();
+
+    return dialogPromise;
+  }
+
+  setJoinRoomStatus(message) {
+    this.joinRoomStatus.textContent = message || '';
+  }
+
+  renderJoinRoomsList(rooms = [], selectedRoomId = '') {
+    this.joinRoomsList.innerHTML = '';
+
+    if (!Array.isArray(rooms) || rooms.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'join-room-empty';
+      empty.textContent = 'Нет доступных комнат';
+      this.joinRoomsList.appendChild(empty);
+      return;
+    }
+
+    rooms.forEach((room) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'join-room-item';
+      button.dataset.roomId = room.id;
+      button.setAttribute('role', 'option');
+      button.setAttribute('aria-selected', room.id === selectedRoomId ? 'true' : 'false');
+
+      if (room.id === selectedRoomId) {
+        button.classList.add('selected');
+      }
+
+      const title = document.createElement('span');
+      title.className = 'join-room-name';
+      title.textContent = room.name || room.id;
+
+      const meta = document.createElement('span');
+      meta.className = 'join-room-meta';
+      meta.textContent = [
+        room.userCapacity > 0 ? `лимит: ${room.userCapacity}` : '',
+        room.private ? 'private' : 'public',
+      ].filter(Boolean).join(' · ');
+
+      button.append(title, meta);
+      this.joinRoomsList.appendChild(button);
     });
   }
 
@@ -186,12 +369,6 @@ export class UI {
     return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
   }
 
-  /**
-   * Рендерит список online users, который пришёл с backend-а.
-   *
-   * Frontend не считает online самостоятельно по join/leave событиям.
-   * Источник правды — server-authoritative presence message.
-   */
   updateOnlineUsersList(users = []) {
     const normalizedUsers = this.normalizeUsers(users);
 
@@ -223,12 +400,6 @@ export class UI {
     });
   }
 
-  /**
-   * Нормализует входной список пользователей только для безопасного рендера.
-   *
-   * Это не заменяет backend-валидацию. Здесь мы просто приводим данные к виду,
-   * удобному для DOM, и не используем innerHTML, чтобы не допустить XSS.
-   */
   normalizeUsers(users) {
     if (!Array.isArray(users)) {
       return [];

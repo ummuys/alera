@@ -8,6 +8,10 @@ type CreateRoomParams struct {
 	Private      bool
 }
 
+type CloseRoomParams struct {
+	RoomID string
+}
+
 type JoinRoomParams struct {
 	RoomID string
 	Conn   *websocket.Conn

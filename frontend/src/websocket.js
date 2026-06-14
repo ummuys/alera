@@ -17,22 +17,29 @@ function normalizeType(type) {
   return String(type || '').replace(/[\s_-]/g, '').toLowerCase();
 }
 
-function buildDefaultWsUrl() {
+function buildDefaultWsUrl(roomId) {
   const queryUrl = new URLSearchParams(window.location.search).get('ws');
 
   if (queryUrl) {
     return queryUrl;
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const normalizedRoomId = String(roomId || '').trim();
 
-  if (window.location.protocol === 'file:') {
-    return `${protocol}//localhost:8081/ws`;
+  if (!normalizedRoomId) {
+    throw new Error('roomId is required for WebSocket connection');
   }
 
-  const host = window.location.host || 'localhost:8081';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const encodedRoomId = encodeURIComponent(normalizedRoomId);
 
-  return `${protocol}//${host}/ws`;
+  if (window.location.protocol === 'file:') {
+    return `${protocol}//localhost:8089/api/v1/room/${encodedRoomId}/ws`;
+  }
+
+  const host = window.location.host || 'localhost:8089';
+
+  return `${protocol}//${host}/api/v1/room/${encodedRoomId}/ws`;
 }
 
 export class WebSocketHandler {
@@ -40,13 +47,13 @@ export class WebSocketHandler {
     this.ui = ui;
     this.canvasHandler = canvasHandler;
     this.socket = null;
-    this.wsUrl = options.wsUrl || buildDefaultWsUrl();
 
     // Эти значения — только запрос frontend-а.
     // Backend может изменить nickname, roomId или вернуть ошибку.
     this.requestedNickname = options.requestedNickname || '';
-    this.requestedRoomId = options.requestedRoomId || 'main';
+    this.requestedRoomId = options.requestedRoomId || '';
     this.requestedCursorColor = options.requestedCursorColor || '#7c3aed';
+    this.wsUrl = options.wsUrl || buildDefaultWsUrl(this.requestedRoomId);
 
     // Настоящая session появляется только после server message type=session.
     this.session = null;
@@ -68,8 +75,9 @@ export class WebSocketHandler {
         this.clearReconnectTimer();
         this.ui.setConnectionStatus('connected');
 
-        // Join содержит только предлагаемые имя, комнату и цвет курсора.
-        // clientId должен быть назначен backend-ом и возвращён в session.
+        // Комната выбрана URL-ом /api/v1/room/{room_id}/ws.
+        // roomId в payload оставлен для совместимости с текущим backend-ом:
+        // сейчас backend ещё берёт roomId из join payload при формировании session.
         this.sendMessage({
           type: 'join',
           payload: {
@@ -191,7 +199,7 @@ export class WebSocketHandler {
     this.session = {
       clientId: String(session.clientId || session.id || ''),
       nickname: String(session.nickname || session.name || this.requestedNickname || ''),
-      roomId: String(session.roomId || this.requestedRoomId || 'main'),
+      roomId: String(session.roomId || this.requestedRoomId || ''),
       color: String(session.color || session.cursorColor || this.requestedCursorColor || ''),
     };
 
@@ -306,10 +314,23 @@ export class WebSocketHandler {
     return PRESENCE_TYPES.has(normalizeType(message.type));
   }
 
+  isJoined() {
+    return Boolean(this.session?.clientId);
+  }
+
   sendMessage(data) {
+    const type = normalizeType(data?.type);
+
     if (this.socket?.readyState !== WebSocket.OPEN) {
-      if (data?.type !== 'draw') {
+      if (type !== 'draw') {
         this.ui.addChatMessage('Нет соединения с сервером', 'server');
+      }
+      return false;
+    }
+
+    if (type !== 'join' && !this.isJoined()) {
+      if (type !== 'draw') {
+        this.ui.addChatMessage('Сначала дождитесь входа в комнату', 'server');
       }
       return false;
     }

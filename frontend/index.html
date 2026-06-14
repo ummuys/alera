@@ -11,8 +11,39 @@
     <form id="joinForm" class="join-card" autocomplete="off">
       <div class="join-glow" aria-hidden="true"></div>
       <div class="join-badge">🎨 WS Board</div>
-      <h1 id="joinTitle">Добро пожаловать на доску</h1>
-      <p class="join-subtitle">Выберите никнейм и цвет курсора — остальные пользователи будут видеть вас именно так.</p>
+      <h1 id="joinTitle">Вход в комнату</h1>
+      <p class="join-subtitle">Сначала выберите существующую комнату или создайте новую. После этого frontend откроет WebSocket именно в выбранную комнату.</p>
+
+      <section class="join-room-section" aria-label="Комнаты">
+        <div class="join-section-header">
+          <span>Комнаты</span>
+          <button id="refreshRoomsButton" class="join-secondary-button" type="button">Обновить</button>
+        </div>
+
+        <div id="joinRoomStatus" class="join-room-status" aria-live="polite">Загрузка комнат...</div>
+        <div id="joinRoomsList" class="join-rooms-list" role="listbox" aria-label="Список комнат"></div>
+
+        <div class="join-create-room">
+          <label class="join-field" for="createRoomNameInput">
+            <span>Название новой комнаты</span>
+            <input id="createRoomNameInput" type="text" maxlength="40" placeholder="Например, Комната для скетчей" />
+          </label>
+
+          <div class="join-create-room-row">
+            <label class="join-field join-capacity-field" for="createRoomCapacityInput">
+              <span>Лимит</span>
+              <input id="createRoomCapacityInput" type="number" min="1" max="100" value="10" />
+            </label>
+
+            <label class="join-checkbox-field" for="createRoomPrivateInput">
+              <input id="createRoomPrivateInput" type="checkbox" />
+              <span>Private</span>
+            </label>
+          </div>
+
+          <button id="createRoomButton" class="join-create-button" type="button">Создать комнату</button>
+        </div>
+      </section>
 
       <label class="join-field" for="joinNicknameInput">
         <span>Никнейм</span>
@@ -31,7 +62,7 @@
         </label>
       </div>
 
-      <button class="join-submit" type="submit">Войти на доску</button>
+      <button class="join-submit" type="submit">Войти в выбранную комнату</button>
     </form>
   </section>
 

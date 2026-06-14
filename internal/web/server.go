@@ -73,6 +73,11 @@ func registerEndpoints(mux *http.ServeMux, ph paint.PaintHub, logs zerolog.Logge
 		JoinRoom(w, r, ph, logs)
 	})
 
+	logs.Info().Str("register route", JoinRoomEndpoint).Msg("")
+	mux.HandleFunc(CloseRoomEndpoint, func(w http.ResponseWriter, r *http.Request) {
+		CloseRoom(w, r, ph, logs)
+	})
+
 }
 
 func resolveFrontendPath() string {

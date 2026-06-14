@@ -45,6 +45,21 @@ func (ph *paintHub) CreateRoom(params CreateRoomParams) CreateRoomResult {
 	}
 }
 
+func (ph *paintHub) CloseRoom(params CloseRoomParams) error {
+	ph.roomMu.Lock()
+	room, ok := ph.rooms[params.RoomID]
+	ph.roomMu.Unlock()
+
+	if !ok {
+		return errs.ErrRoomDoNotExists
+	}
+
+	rs := room.Close()
+
+	ph.logger.Info().Str("room_id", params.RoomID).Int("before_online", rs.BeforeOnline).Int("after_online", rs.AfterOnline).Msg("room closed")
+	return nil
+}
+
 func (ph *paintHub) JoinRoom(params JoinRoomParams) error {
 	ph.roomMu.Lock()
 	room, ok := ph.rooms[params.RoomID]

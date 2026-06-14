@@ -40,12 +40,25 @@ export class EventHandler {
     this.ui.canvas.addEventListener('pointerdown', (event) => {
       event.preventDefault();
 
+      if (!this.wsHandler.isJoined()) {
+        this.canvasHandler.isDrawing = false;
+        this.canvasHandler.lastPoint = null;
+        this.ui.addChatMessage('Сначала войдите в комнату', 'server');
+        return;
+      }
+
       this.canvasHandler.isDrawing = true;
       this.canvasHandler.lastPoint = this.canvasHandler.getPoint(event);
       this.ui.canvas.setPointerCapture(event.pointerId);
     });
 
     this.ui.canvas.addEventListener('pointermove', (event) => {
+      if (!this.wsHandler.isJoined()) {
+        this.canvasHandler.isDrawing = false;
+        this.canvasHandler.lastPoint = null;
+        return;
+      }
+
       if (!this.canvasHandler.isDrawing || !this.canvasHandler.lastPoint) {
         return;
       }
@@ -118,6 +131,11 @@ export class EventHandler {
     });
 
     this.ui.clearButton.addEventListener('click', () => {
+      if (!this.wsHandler.isJoined()) {
+        this.ui.addChatMessage('Сначала войдите в комнату', 'server');
+        return;
+      }
+
       // Раньше frontend чистил canvas сразу. Это было неверно архитектурно:
       // если backend потом запретит clear или соединение отвалится, локальное
       // состояние будет отличаться от серверного.
@@ -138,6 +156,11 @@ export class EventHandler {
       const text = this.ui.chatInput.value.trim();
 
       if (!text) {
+        return;
+      }
+
+      if (!this.wsHandler.isJoined()) {
+        this.ui.addChatMessage('Сначала войдите в комнату', 'server');
         return;
       }
 

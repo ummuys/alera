@@ -1,13 +1,15 @@
 /**
  * app.js
  *
- * Точка входа фронтенда.
+ * Точка входа frontend-а.
  *
- * Главная ответственность этого файла — собрать приложение из независимых модулей:
- * UI, CanvasHandler, WebSocketHandler и EventHandler.
- *
- * Важно: frontend больше не генерирует доверенный clientId.
- * clientId должен выдать backend после успешного join/session handshake.
+ * Новый flow:
+ * 1. frontend загружается обычным HTTP;
+ * 2. пользователь выбирает существующую комнату или создаёт новую через HTTP API;
+ * 3. пользователь вводит nickname/color;
+ * 4. frontend открывает WebSocket именно в выбранную комнату:
+ *    /api/v1/room/{room_id}/ws;
+ * 5. canvas/чат считаются активными только после server message type=session.
  */
 
 import { UI } from './ui.js';
@@ -15,6 +17,7 @@ import { CanvasHandler } from './canvas.js';
 import { WebSocketHandler } from './websocket.js';
 import { EventHandler } from './events.js';
 
+const API_BASE = '/api/v1';
 const DEFAULT_CURSOR_COLORS = [
   '#7c3aed',
   '#2563eb',
@@ -26,13 +29,6 @@ const DEFAULT_CURSOR_COLORS = [
   '#111827',
 ];
 
-/**
- * Создаёт локальный fallback nickname.
- *
- * Это НЕ доверенная идентичность пользователя.
- * Это только удобное имя, которое frontend предлагает backend-у.
- * Backend обязан нормализовать nickname: trim, длина, пустые значения, дубли.
- */
 function createFallbackNickname() {
   const randomPart = globalThis.crypto?.randomUUID
     ? globalThis.crypto.randomUUID().slice(0, 4)
@@ -46,28 +42,95 @@ function createFallbackCursorColor() {
   return DEFAULT_CURSOR_COLORS[index];
 }
 
-/**
- * Читает roomId из URL.
- *
- * Frontend может попросить подключить пользователя к комнате,
- * но backend должен сам решить: существует ли комната, есть ли доступ,
- * нужно ли создать комнату или вернуть ошибку.
- */
 function getRequestedRoomId() {
-  const roomId = new URLSearchParams(window.location.search).get('room');
-  return roomId?.trim() || 'main';
+  return new URLSearchParams(window.location.search).get('room')?.trim() || '';
 }
 
-/**
- * Запрашивает стартовые настройки пользователя через кастомное окно.
- *
- * Это UX-операция, а не security/business-логика.
- * Финальные nickname/color придут от backend-а в событии session/presence.
- */
+async function requestJson(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      Accept: 'application/json',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+
+  const text = await response.text();
+  let data = null;
+
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`Backend вернул не JSON: ${text}`);
+    }
+  }
+
+  if (!response.ok) {
+    const message = data?.message || data?.error || text || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+function normalizeRoom(rawRoom = {}) {
+  const id = String(rawRoom.id || rawRoom.ID || '').trim();
+  const name = String(rawRoom.name || rawRoom.Name || id || 'Без названия').trim();
+  const userCapacity = Number(
+    rawRoom.user_capacity
+      ?? rawRoom.userCapacity
+      ?? rawRoom.UserCapacity
+      ?? 0,
+  );
+
+  return {
+    id,
+    name,
+    userCapacity: Number.isFinite(userCapacity) ? userCapacity : 0,
+    private: Boolean(rawRoom.private ?? rawRoom.Private ?? false),
+  };
+}
+
+async function loadRooms() {
+  const data = await requestJson('/room');
+  const rooms = Array.isArray(data?.rooms) ? data.rooms : [];
+
+  return rooms
+    .map(normalizeRoom)
+    .filter((room) => room.id)
+    .sort((left, right) => left.name.localeCompare(right.name, 'ru'));
+}
+
+async function createRoom({ name, userCapacity, private: isPrivate }) {
+  const normalizedName = String(name || '').trim();
+
+  if (!normalizedName) {
+    throw new Error('Введите название комнаты');
+  }
+
+  const normalizedCapacity = Math.max(1, Number(userCapacity) || 10);
+
+  const data = await requestJson('/room', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: normalizedName,
+      user_capacity: normalizedCapacity,
+      private: Boolean(isPrivate),
+    }),
+  });
+
+  return normalizeRoom(data);
+}
+
 async function askJoinOptions(ui) {
   return ui.openJoinDialog({
     nickname: createFallbackNickname(),
     color: createFallbackCursorColor(),
+    roomId: getRequestedRoomId(),
+    loadRooms,
+    createRoom,
   });
 }
 
@@ -79,19 +142,19 @@ async function init() {
   const wsHandler = new WebSocketHandler(ui, canvasHandler, {
     requestedNickname: joinOptions.nickname,
     requestedCursorColor: joinOptions.color,
-    requestedRoomId: getRequestedRoomId(),
+    requestedRoomId: joinOptions.roomId,
   });
+
   const eventHandler = new EventHandler(ui, canvasHandler, wsHandler);
 
-  // Первичный UI-state до подтверждения backend-а.
   ui.setCurrentUser('подключение...');
+  ui.setConnectionStatus('connecting');
+  ui.addChatMessage(`Комната: ${joinOptions.roomName || joinOptions.roomId}`, 'server');
 
   canvasHandler.resizeCanvas();
   eventHandler.init();
   wsHandler.connect();
 
-  // Canvas зависит от размера viewport/container, поэтому на resize нужно пересчитать
-  // физический размер canvas и сохранить уже нарисованное содержимое.
   window.addEventListener('resize', () => {
     canvasHandler.resizeCanvas();
   });

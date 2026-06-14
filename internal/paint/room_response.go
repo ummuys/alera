@@ -36,3 +36,8 @@ type OnlineUsers struct {
 	Type  string   `json:"type"`
 	Users []string `json:"users"`
 }
+
+type RoomStatus struct {
+	BeforeOnline int
+	AfterOnline  int
+}

@@ -8,4 +8,5 @@ const (
 	CreateRoomEndpoint = "POST " + RoomPath
 	ListRoomsEndpoint  = "GET " + RoomPath
 	JoinRoomEndpoint   = "GET " + RoomPath + "/{room_id}/ws"
+	CloseRoomEndpoint  = "DELETE" + RoomPath + "/{room_id}"
 )

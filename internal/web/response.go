@@ -13,6 +13,10 @@ type CreateRoomResponse struct {
 	Private      bool   `json:"private"`
 }
 
+type CloseRoomResponse struct {
+	ID string `json:"id"`
+}
+
 type ListRoomsResponse struct {
 	Rooms []Rooms `json:"rooms"`
 }

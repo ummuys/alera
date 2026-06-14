@@ -46,7 +46,7 @@ func CreateRoom(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logge
 		return
 	}
 
-	sendRequest(w, r, bytes, "room created", logger)
+	sendResponse(w, r, bytes, "room created", logger)
 }
 
 func ListRooms(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger zerolog.Logger) {
@@ -64,14 +64,12 @@ func ListRooms(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger
 		resp.Rooms = append(resp.Rooms, respRoom)
 	}
 
-	bytes, err := json.Marshal(resp)
+	bytes, err := transformToBytes(w, r, resp, logger)
 	if err != nil {
-		logger.Warn().Str("host", r.Host).Str("err", err.Error()).Msg("can't marshall result")
-		http.Error(w, InternalErrorMessage, http.StatusInternalServerError)
 		return
 	}
 
-	sendRequest(w, r, bytes, "list rooms returned", logger)
+	sendResponse(w, r, bytes, "list rooms returned", logger)
 }
 
 func JoinRoom(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger zerolog.Logger) {
@@ -97,27 +95,60 @@ func JoinRoom(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger 
 		RoomID: roomID,
 		Conn:   conn,
 	}); err != nil {
-
-		switch {
-		case errors.Is(err, errs.ErrRoomDoNotExists):
-			http.Error(w, err.Error(), http.StatusMethodNotAllowed)
-
-		default:
-			logger.Warn().Err(err).Str("room_id", roomID).Msg("default catch")
-			http.Error(w, errs.ErrInternal, http.StatusMethodNotAllowed)
-
-		}
-
+		sendErrResponse(w, r, err, logger)
 	}
 }
 
+func CloseRoom(w http.ResponseWriter, r *http.Request, ph paint.PaintHub, logger zerolog.Logger) {
+
+	if !validMethod(w, r, http.MethodDelete, logger) {
+		return
+	}
+
+	roomID := strings.TrimSpace(r.PathValue("room_id"))
+	if roomID == "" {
+		http.Error(w, "bad room_id", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := ph.CloseRoom(paint.CloseRoomParams{
+		RoomID: roomID,
+	}); err != nil {
+		sendErrResponse(w, r, err, logger)
+	}
+
+	resp := CloseRoomResponse{
+		ID: roomID,
+	}
+
+	bytes, err := transformToBytes(w, r, resp, logger)
+	if err != nil {
+		return
+	}
+
+	sendResponse(w, r, bytes, "room deleted", logger)
+
+}
+
 // HELPER
-func sendRequest(w http.ResponseWriter, r *http.Request, resp []byte, msg string, logger zerolog.Logger) {
+func sendResponse(w http.ResponseWriter, r *http.Request, resp []byte, msg string, logger zerolog.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(resp)
 
 	logger.Info().Str("host", r.Host).Msg(msg)
+}
+
+func transformToBytes(w http.ResponseWriter, r *http.Request, resp any, logger zerolog.Logger) ([]byte, error) {
+	bytes, err := json.Marshal(resp)
+	if err != nil {
+		logger.Warn().Str("host", r.Host).Str("err", err.Error()).Msg("can't marshall result")
+		http.Error(w, InternalErrorMessage, http.StatusInternalServerError)
+		return nil, err
+	}
+
+	return bytes, nil
+
 }
 
 func validMethod(w http.ResponseWriter, r *http.Request, method any, logger zerolog.Logger) bool {
@@ -128,4 +159,17 @@ func validMethod(w http.ResponseWriter, r *http.Request, method any, logger zero
 	}
 
 	return true
+}
+
+func sendErrResponse(w http.ResponseWriter, r *http.Request, err error, logger zerolog.Logger) {
+	switch {
+	case errors.Is(err, errs.ErrRoomDoNotExists):
+		http.Error(w, err.Error(), http.StatusMethodNotAllowed)
+
+	default:
+		logger.Warn().Err(err).Msg("default catch")
+		http.Error(w, errs.ErrInternal, http.StatusMethodNotAllowed)
+
+	}
+
 }
