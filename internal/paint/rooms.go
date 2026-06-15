@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+	"github.com/ummuys/alera/internal/errs"
 )
 
 // paintRoom реализует in-memory hub для совместной доски.
@@ -59,8 +60,12 @@ func NewPaintRoom(ctx context.Context, params CreateRoomParams, logger zerolog.L
 }
 
 // Добавление клиента
-func (pr *paintRoom) Add(conn *websocket.Conn) {
+func (pr *paintRoom) Add(conn *websocket.Conn) error {
 	pr.clientMu.Lock()
+
+	if len(pr.clients)+1 > pr.params.capacity {
+		return errs.ErrRoomIsFull
+	}
 
 	id := uuid.New().String()
 	client := newClient(id, conn, pr.RouterChan, pr.ctx, pr.logger)
@@ -77,6 +82,8 @@ func (pr *paintRoom) Add(conn *websocket.Conn) {
 		<-client.ctx.Done()
 		pr.remove(id)
 	}()
+
+	return nil
 }
 
 func (pr *paintRoom) Close() RoomStatus {

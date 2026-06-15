@@ -68,6 +68,7 @@ func (ph *paintHub) JoinRoom(params JoinRoomParams) error {
 	if !ok {
 		return errs.ErrRoomDoNotExists
 	}
+
 	room.Add(params.Conn)
 	return nil
 }
