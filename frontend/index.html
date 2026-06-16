@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Alera Whiteboard</title>
+  <title>Alera — Collaborative Whiteboard</title>
   <link rel="stylesheet" href="./src/styles.css" />
 </head>
 <body>
@@ -11,163 +11,227 @@
     <form id="joinForm" class="join-card wizard-card" autocomplete="off">
       <div class="join-glow" aria-hidden="true"></div>
 
-      <div class="wizard-topline">
-        <div class="join-badge">Alera rooms</div>
-        <div class="wizard-progress" aria-label="Этапы входа">
-          <span id="wizardDotAction" class="wizard-dot active"></span>
-          <span id="wizardDotRoom" class="wizard-dot"></span>
-          <span id="wizardDotProfile" class="wizard-dot"></span>
-        </div>
+      <div class="join-layout">
+        <aside class="join-aside" aria-hidden="true">
+          <div class="brand-mark">A</div>
+          <div>
+            <p class="join-kicker">Alera board</p>
+            <h2>Комнаты для совместных схем, скетчей и быстрых идей.</h2>
+          </div>
+          <div class="join-preview-board">
+            <span class="preview-card preview-card-a"></span>
+            <span class="preview-card preview-card-b"></span>
+            <span class="preview-line preview-line-a"></span>
+            <span class="preview-line preview-line-b"></span>
+            <span class="preview-cursor preview-cursor-a">U</span>
+            <span class="preview-cursor preview-cursor-b">D</span>
+          </div>
+          <div class="join-feature-list">
+            <span>Live canvas</span>
+            <span>WebSocket sync</span>
+            <span>Room history ready</span>
+          </div>
+        </aside>
+
+        <main class="join-main">
+          <div class="wizard-topline">
+            <div class="join-badge">Workspace setup</div>
+            <div class="wizard-progress" aria-label="Этапы входа">
+              <span id="wizardDotAction" class="wizard-dot active"></span>
+              <span id="wizardDotRoom" class="wizard-dot"></span>
+              <span id="wizardDotProfile" class="wizard-dot"></span>
+            </div>
+          </div>
+
+          <h1 id="joinTitle">Открыть доску</h1>
+          <p id="joinSubtitle" class="join-subtitle">
+            Создайте новую whiteboard-комнату или подключитесь к существующей. После выбора комнаты frontend откроет WebSocket-сессию.
+          </p>
+
+          <div id="wizardGlobalStatus" class="wizard-global-status" aria-live="polite"></div>
+
+          <section id="wizardStepAction" class="wizard-step active" aria-label="Выбор действия">
+            <div class="wizard-choice-grid">
+              <button id="actionCreateButton" class="wizard-choice-card" type="button">
+                <span class="wizard-choice-icon">＋</span>
+                <span class="wizard-choice-title">Новая доска</span>
+                <span class="wizard-choice-text">Создать комнату, задать лимит участников и сразу перейти к работе.</span>
+              </button>
+
+              <button id="actionJoinButton" class="wizard-choice-card" type="button">
+                <span class="wizard-choice-icon">↳</span>
+                <span class="wizard-choice-title">Войти в комнату</span>
+                <span class="wizard-choice-text">Загрузить список комнат с backend-а и выбрать активную доску.</span>
+              </button>
+            </div>
+          </section>
+
+          <section id="wizardStepCreate" class="wizard-step" aria-label="Создание комнаты">
+            <div class="wizard-section-title">
+              <span>Параметры новой доски</span>
+              <button id="createRoomBackButton" class="join-secondary-button" type="button">Назад</button>
+            </div>
+
+            <label class="join-field" for="createRoomNameInput">
+              <span>Название комнаты</span>
+              <input id="createRoomNameInput" type="text" maxlength="40" placeholder="Например, API design session" />
+            </label>
+
+            <div class="join-create-room-row">
+              <label class="join-field join-capacity-field" for="createRoomCapacityInput">
+                <span>Лимит участников</span>
+                <input id="createRoomCapacityInput" type="number" min="1" max="100" value="10" />
+              </label>
+
+              <label class="join-checkbox-field" for="createRoomPrivateInput">
+                <input id="createRoomPrivateInput" type="checkbox" />
+                <span>Private board</span>
+              </label>
+            </div>
+
+            <button id="createRoomButton" class="join-submit" type="button">Создать доску</button>
+          </section>
+
+          <section id="wizardStepJoin" class="wizard-step" aria-label="Выбор комнаты">
+            <div class="wizard-section-title">
+              <span>Активные доски</span>
+              <div class="wizard-section-actions">
+                <button id="refreshRoomsButton" class="join-secondary-button" type="button">Обновить</button>
+                <button id="joinRoomBackButton" class="join-secondary-button" type="button">Назад</button>
+              </div>
+            </div>
+
+            <div id="joinRoomStatus" class="join-room-status" aria-live="polite">Комнаты ещё не загружены</div>
+            <div id="joinRoomsList" class="join-rooms-list wizard-rooms-list" role="listbox" aria-label="Список комнат"></div>
+
+            <button id="joinRoomNextButton" class="join-submit" type="button">Продолжить</button>
+          </section>
+
+          <section id="wizardStepProfile" class="wizard-step" aria-label="Профиль пользователя">
+            <div class="wizard-section-title">
+              <span>Профиль участника</span>
+              <button id="profileBackButton" class="join-secondary-button" type="button">Назад</button>
+            </div>
+
+            <div id="selectedRoomSummary" class="selected-room-summary"></div>
+
+            <label class="join-field" for="joinNicknameInput">
+              <span>Никнейм</span>
+              <input id="joinNicknameInput" type="text" maxlength="24" placeholder="Например, PixelFox" />
+            </label>
+
+            <div class="join-color-section">
+              <div class="join-color-heading">
+                <span>Цвет курсора</span>
+                <span id="joinCursorColorPreview" class="join-cursor-preview" aria-hidden="true"></span>
+              </div>
+              <div id="joinColorPalette" class="join-color-palette" aria-label="Быстрый выбор цвета курсора"></div>
+              <label class="join-color-picker" for="joinCursorColorInput">
+                <span>Свой цвет</span>
+                <input id="joinCursorColorInput" type="color" value="#7c3aed" />
+              </label>
+            </div>
+
+            <button class="join-submit" type="submit">Войти на доску</button>
+          </section>
+        </main>
       </div>
-
-      <h1 id="joinTitle">Вход в комнату</h1>
-      <p id="joinSubtitle" class="join-subtitle">
-        Сначала выберите действие: создать комнату или присоединиться к существующей. После этого frontend откроет WebSocket в конкретную комнату.
-      </p>
-
-      <div id="wizardGlobalStatus" class="wizard-global-status" aria-live="polite"></div>
-
-      <section id="wizardStepAction" class="wizard-step active" aria-label="Выбор действия">
-        <div class="wizard-choice-grid">
-          <button id="actionCreateButton" class="wizard-choice-card" type="button">
-            <span class="wizard-choice-icon">＋</span>
-            <span class="wizard-choice-title">Создать комнату</span>
-            <span class="wizard-choice-text">Задать название, лимит пользователей и сразу войти в новую комнату.</span>
-          </button>
-
-          <button id="actionJoinButton" class="wizard-choice-card" type="button">
-            <span class="wizard-choice-icon">↪</span>
-            <span class="wizard-choice-title">Присоединиться</span>
-            <span class="wizard-choice-text">Получить список комнат с backend-а, выбрать комнату и подключиться к ней.</span>
-          </button>
-        </div>
-      </section>
-
-      <section id="wizardStepCreate" class="wizard-step" aria-label="Создание комнаты">
-        <div class="wizard-section-title">
-          <span>Создание комнаты</span>
-          <button id="createRoomBackButton" class="join-secondary-button" type="button">Назад</button>
-        </div>
-
-        <label class="join-field" for="createRoomNameInput">
-          <span>Название комнаты</span>
-          <input id="createRoomNameInput" type="text" maxlength="40" placeholder="Например, Комната для скетчей" />
-        </label>
-
-        <div class="join-create-room-row">
-          <label class="join-field join-capacity-field" for="createRoomCapacityInput">
-            <span>Лимит пользователей</span>
-            <input id="createRoomCapacityInput" type="number" min="1" max="100" value="10" />
-          </label>
-
-          <label class="join-checkbox-field" for="createRoomPrivateInput">
-            <input id="createRoomPrivateInput" type="checkbox" />
-            <span>Private</span>
-          </label>
-        </div>
-
-        <button id="createRoomButton" class="join-submit" type="button">Создать и продолжить</button>
-      </section>
-
-      <section id="wizardStepJoin" class="wizard-step" aria-label="Выбор комнаты">
-        <div class="wizard-section-title">
-          <span>Выбор комнаты</span>
-          <div class="wizard-section-actions">
-            <button id="refreshRoomsButton" class="join-secondary-button" type="button">Обновить</button>
-            <button id="joinRoomBackButton" class="join-secondary-button" type="button">Назад</button>
-          </div>
-        </div>
-
-        <div id="joinRoomStatus" class="join-room-status" aria-live="polite">Комнаты ещё не загружены</div>
-        <div id="joinRoomsList" class="join-rooms-list wizard-rooms-list" role="listbox" aria-label="Список комнат"></div>
-
-        <button id="joinRoomNextButton" class="join-submit" type="button">Продолжить с выбранной комнатой</button>
-      </section>
-
-      <section id="wizardStepProfile" class="wizard-step" aria-label="Профиль пользователя">
-        <div class="wizard-section-title">
-          <span>Профиль перед входом</span>
-          <button id="profileBackButton" class="join-secondary-button" type="button">Назад</button>
-        </div>
-
-        <div id="selectedRoomSummary" class="selected-room-summary"></div>
-
-        <label class="join-field" for="joinNicknameInput">
-          <span>Никнейм</span>
-          <input id="joinNicknameInput" type="text" maxlength="24" placeholder="Например, PixelFox" />
-        </label>
-
-        <div class="join-color-section">
-          <div class="join-color-heading">
-            <span>Цвет курсора</span>
-            <span id="joinCursorColorPreview" class="join-cursor-preview" aria-hidden="true"></span>
-          </div>
-          <div id="joinColorPalette" class="join-color-palette" aria-label="Быстрый выбор цвета курсора"></div>
-          <label class="join-color-picker" for="joinCursorColorInput">
-            <span>Свой цвет</span>
-            <input id="joinCursorColorInput" type="color" value="#7c3aed" />
-          </label>
-        </div>
-
-        <button class="join-submit" type="submit">Войти в комнату</button>
-      </section>
     </form>
   </section>
 
   <div class="app">
     <header class="toolbar">
-      <div class="title">🎨 Alera</div>
-
-      <div class="tool-group" aria-label="Инструменты рисования">
-        <button id="penButton" class="active" type="button">✏️ Кисть</button>
-        <button id="eraserButton" type="button">🧽 Ластик</button>
-      </div>
-
-      <div class="tool-group" aria-label="Настройки кисти">
-        <input id="colorInput" type="color" value="#111111" title="Цвет кисти" />
-        <label class="size-control" title="Размер кисти">
-          <span>↕️</span>
-          <input id="sizeInput" type="range" min="1" max="40" value="5" />
-        </label>
-        <div class="brush-preview" title="Превью кисти">
-          <div id="brushDot" class="brush-dot"></div>
+      <div class="workspace-brand">
+        <div class="brand-mark small">A</div>
+        <div class="workspace-copy">
+          <div class="title">Alera</div>
+          <div class="workspace-subtitle">Collaborative whiteboard</div>
         </div>
       </div>
 
-      <div class="tool-group" aria-label="Действия">
-        <button id="clearButton" type="button">🗑️ Очистить</button>
-        <button id="saveButton" type="button">💾 Сохранить PNG</button>
-      </div>
+      <div class="topbar-divider" aria-hidden="true"></div>
 
       <div class="status" aria-live="polite">
         <span id="statusDot" class="status-dot"></span>
         <span id="statusText">disconnected</span>
       </div>
+
+      <div class="toolbar-spacer" aria-hidden="true"></div>
+
+      <div class="topbar-actions" aria-label="Действия">
+        <button id="saveButton" class="secondary-action" type="button">Экспорт PNG</button>
+      </div>
     </header>
+
+    <aside class="floating-tools" aria-label="Инструменты рисования">
+      <div class="tool-group primary-tools">
+        <button id="penButton" class="tool-button active" type="button" title="Кисть">
+          <span class="tool-icon">✎</span>
+          <span class="tool-label">Кисть</span>
+        </button>
+        <button id="eraserButton" class="tool-button" type="button" title="Ластик">
+          <span class="tool-icon">⌫</span>
+          <span class="tool-label">Ластик</span>
+        </button>
+      </div>
+
+      <div class="tool-group brush-tools" aria-label="Настройки кисти">
+        <label class="color-control" title="Цвет кисти">
+          <span class="control-caption">Цвет</span>
+          <input id="colorInput" type="color" value="#111111" title="Цвет кисти" />
+        </label>
+
+        <label class="size-control" title="Размер кисти">
+          <span class="control-caption">Размер</span>
+          <input id="sizeInput" type="range" min="1" max="40" value="5" />
+        </label>
+
+        <div class="brush-preview" title="Превью кисти">
+          <div id="brushDot" class="brush-dot"></div>
+        </div>
+      </div>
+
+      <div class="tool-group action-tools" aria-label="Очистка">
+        <button id="clearButton" class="tool-button danger" type="button" title="Очистить доску">
+          <span class="tool-icon">×</span>
+          <span class="tool-label">Очистить</span>
+        </button>
+      </div>
+    </aside>
 
     <aside class="online-users-panel" id="onlineUsersPanel" aria-label="Пользователи онлайн">
       <div class="online-users-header">
-        <span>👥 Онлайн (<span id="usersCount">0</span>)</span>
+        <div>
+          <span class="panel-title">Участники</span>
+          <span class="panel-caption">онлайн сейчас</span>
+        </div>
+        <span class="users-count-pill"><span id="usersCount">0</span></span>
       </div>
       <ul class="online-users-list" id="onlineUsersList"></ul>
     </aside>
 
-    <main class="board-wrapper">
-      <canvas id="board"></canvas>
+    <main class="board-shell">
+      <div class="board-rulers" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="board-wrapper">
+        <canvas id="board"></canvas>
+      </div>
+      <div class="board-hint" aria-hidden="true">Drag to draw · WebSocket synced · Server-authoritative events</div>
     </main>
 
     <section class="chat-panel" id="chatPanel" aria-label="Чат">
       <div class="chat-header" id="chatHeader">
         <div class="chat-title">
-          <span>💬 Чат</span>
+          <span>Чат</span>
           <span id="chatNickname" class="chat-small"></span>
         </div>
         <button class="chat-toggle" id="chatToggle" title="Свернуть" type="button">−</button>
       </div>
       <div id="chatMessages" class="chat-messages"></div>
       <div class="chat-input-row">
-        <input id="chatInput" type="text" maxlength="1000" placeholder="Напишите сообщение..." />
-        <button id="chatSendButton" type="button">➤</button>
+        <input id="chatInput" type="text" maxlength="1000" placeholder="Сообщение в комнату..." />
+        <button id="chatSendButton" type="button">Отправить</button>
       </div>
     </section>
   </div>
