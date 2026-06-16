@@ -16,14 +16,19 @@ type paintHub struct {
 	roomMu sync.RWMutex          // Мьютекс для работы с клиентами
 	rooms  map[string]*paintRoom // Мапа с id клиента -> его структура
 
+	paintStorage PaintStorage
+
 	logger zerolog.Logger // Логгер
 }
 
 func NewPaintHub(ctx context.Context, logger zerolog.Logger) PaintHub {
+
+	paintStorage := NewPaintStorage(logger)
 	return &paintHub{
-		ctx:    ctx,
-		rooms:  make(map[string]*paintRoom),
-		logger: logger,
+		ctx:          ctx,
+		rooms:        make(map[string]*paintRoom),
+		logger:       logger,
+		paintStorage: paintStorage,
 	}
 }
 
@@ -32,7 +37,8 @@ func (ph *paintHub) CreateRoom(params CreateRoomParams) CreateRoomResult {
 	ph.roomMu.Lock()
 
 	rid := uuid.New().String()
-	pr := NewPaintRoom(ph.ctx, params, ph.logger)
+	params.ID = rid
+	pr := NewPaintRoom(ph.ctx, ph.paintStorage, params, ph.logger)
 	ph.rooms[rid] = pr
 
 	ph.roomMu.Unlock()

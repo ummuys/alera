@@ -280,11 +280,6 @@ func (c *client) eventTypeChat(event ClientEvent) {
 
 // Функция ивента при добавления элементов на холст (рисование)
 func (c *client) eventTypeDraw(event ClientEvent) {
-	var drawPay DrawPayload
-	if err := json.Unmarshal(event.Payload, &drawPay); err != nil {
-		c.logger.Error().Err(err).Msg("marshal response failed")
-		return
-	}
 
 	ci := c.getInfo()
 
@@ -292,7 +287,7 @@ func (c *client) eventTypeDraw(event ClientEvent) {
 		ServerResponse{
 			Type:    EventTypeDraw,
 			Sender:  c.sender(),
-			Payload: drawPay,
+			Payload: event.Payload,
 		},
 	)
 
@@ -304,8 +299,8 @@ func (c *client) eventTypeDraw(event ClientEvent) {
 	msg := writeMessage{
 		ClientID: ci.ID,
 		Event:    EventTypeDraw,
-		DP:       &drawPay,
 		Data:     data,
+		DP:       &event.Payload,
 	}
 
 	c.sendMessageToRouterChan(msg)

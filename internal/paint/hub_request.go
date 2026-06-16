@@ -3,6 +3,7 @@ package paint
 import "github.com/gorilla/websocket"
 
 type CreateRoomParams struct {
+	ID           string
 	Name         string
 	UserCapacity int
 	Private      bool

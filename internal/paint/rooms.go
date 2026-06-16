@@ -21,8 +21,7 @@ type paintRoom struct {
 	clientMu sync.Mutex         // Мьютекс для работы с клиентами
 	clients  map[string]*client // Мапа с id клиента -> его структура
 
-	historyMu sync.Mutex    // Мьютекст для работы с историей
-	history   []DrawPayload // История
+	storage PaintStorage
 
 	logger zerolog.Logger // Логгер
 
@@ -30,16 +29,18 @@ type paintRoom struct {
 }
 
 type roomParams struct {
+	id       string
 	name     string
 	capacity int
 	private  bool
 }
 
-func NewPaintRoom(ctx context.Context, params CreateRoomParams, logger zerolog.Logger) *paintRoom {
+func NewPaintRoom(ctx context.Context, ps PaintStorage, params CreateRoomParams, logger zerolog.Logger) *paintRoom {
 
 	ctx, cancel := context.WithCancel(ctx)
 	pr := paintRoom{
 		params: roomParams{
+			id:       params.ID,
 			name:     params.Name,
 			capacity: params.UserCapacity,
 			private:  params.Private,
@@ -52,6 +53,8 @@ func NewPaintRoom(ctx context.Context, params CreateRoomParams, logger zerolog.L
 
 		clients:    make(map[string]*client),
 		RouterChan: make(chan writeMessage, 1024),
+
+		storage: ps,
 	}
 
 	go pr.broadcast()
@@ -64,6 +67,7 @@ func (pr *paintRoom) Add(conn *websocket.Conn) error {
 	pr.clientMu.Lock()
 
 	if len(pr.clients)+1 > pr.params.capacity {
+		pr.clientMu.Unlock()
 		return errs.ErrRoomIsFull
 	}
 
@@ -163,7 +167,7 @@ func (pr *paintRoom) broadcast() {
 				continue
 
 			case EventTypeDraw:
-				pr.addMoveToHistory(*msg.DP)
+				pr.addMoveToHistory(msg.DP)
 			case EventTypeClear:
 				pr.clearHistory()
 			}
@@ -185,16 +189,15 @@ func (pr *paintRoom) broadcast() {
 	}
 }
 
-func (pr *paintRoom) addMoveToHistory(dp DrawPayload) {
-	pr.historyMu.Lock()
-	defer pr.historyMu.Unlock()
-	pr.history = append(pr.history, dp)
+func (pr *paintRoom) addMoveToHistory(payload *json.RawMessage) {
+	pr.storage.AddToHistory(AddToHistoryParams{
+		RoomID:  pr.params.id,
+		Payload: *payload,
+	})
 }
 
 func (pr *paintRoom) clearHistory() {
-	pr.historyMu.Lock()
-	defer pr.historyMu.Unlock()
-	pr.history = make([]DrawPayload, 0)
+	pr.storage.ClearHistory(pr.params.id)
 }
 
 // Получение всех онлайн пользователей
